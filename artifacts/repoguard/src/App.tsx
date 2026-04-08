@@ -2,6 +2,31 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
+// ─── Shared AudioContext ─────────────────────────────────────────────────────
+// One context, kept alive — never closed between sounds.
+// Must be created (or resumed) inside a user-gesture handler.
+let _ctx: AudioContext | null = null;
+
+function getCtx(): AudioContext | null {
+  const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!AC) return null;
+  if (!_ctx) _ctx = new AC();
+  if (_ctx.state === "suspended") _ctx.resume();
+  return _ctx;
+}
+
+// Call this on any user tap to unlock audio before the demo timers fire
+function warmAudio() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  // Play a silent buffer — forces the browser to grant audio permission
+  const buf = ctx.createBuffer(1, 1, 22050);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0);
+}
+
 function haptic(enabled, pattern: any = 10) {
   if (!enabled) return;
   if (typeof navigator !== "undefined" && navigator.vibrate) {
@@ -9,50 +34,90 @@ function haptic(enabled, pattern: any = 10) {
   }
 }
 
+// Page-transition whoosh (descending triangle wave)
 function playSwoosh(enabled) {
   if (!enabled) return;
-  const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
-  if (!AudioCtx) return;
-  const ctx = new AudioCtx();
+  const ctx = getCtx();
+  if (!ctx) return;
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
   osc.type = "triangle";
-  osc.frequency.setValueAtTime(520, now);
-  osc.frequency.exponentialRampToValueAtTime(260, now + 0.18);
+  osc.frequency.setValueAtTime(540, now);
+  osc.frequency.exponentialRampToValueAtTime(220, now + 0.22);
   filter.type = "lowpass";
-  filter.frequency.setValueAtTime(1200, now);
+  filter.frequency.setValueAtTime(1400, now);
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.04, now + 0.03);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+  gain.gain.exponentialRampToValueAtTime(0.06, now + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
   osc.start(now);
-  osc.stop(now + 0.22);
-  setTimeout(() => ctx.close(), 350);
+  osc.stop(now + 0.26);
 }
 
+// Incoming event pop (short sine blip)
 function playPop(enabled) {
   if (!enabled) return;
-  const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
-  if (!AudioCtx) return;
-  const ctx = new AudioCtx();
+  const ctx = getCtx();
+  if (!ctx) return;
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "sine";
-  osc.frequency.setValueAtTime(640, now);
-  osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+  osc.frequency.setValueAtTime(660, now);
+  osc.frequency.exponentialRampToValueAtTime(900, now + 0.08);
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.05, now + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.055, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
   osc.connect(gain);
   gain.connect(ctx.destination);
   osc.start(now);
-  osc.stop(now + 0.14);
-  setTimeout(() => ctx.close(), 300);
+  osc.stop(now + 0.16);
+}
+
+// Breach alert — low urgent pulse
+function playAlert(enabled) {
+  if (!enabled) return;
+  const ctx = getCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  [0, 0.18, 0.36].forEach(offset => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(180, now + offset);
+    gain.gain.setValueAtTime(0.0001, now + offset);
+    gain.gain.exponentialRampToValueAtTime(0.07, now + offset + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now + offset);
+    osc.stop(now + offset + 0.16);
+  });
+}
+
+// Resolution ting — clean bell chime
+function playTing(enabled) {
+  if (!enabled) return;
+  const ctx = getCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Two harmonics for a bell-like quality
+  [[880, 0.06], [1320, 0.03]].forEach(([freq, vol]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq as number, now);
+    gain.gain.setValueAtTime(vol as number, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 1.5);
+  });
 }
 
 function StatusBadge({ status, theme }) {
@@ -393,14 +458,32 @@ export default function App() {
   }, [events, settings.sound, settings.haptics]);
 
   const triggerDemo = async () => {
+    // Warm the AudioContext NOW while we're inside a direct user-gesture handler.
+    // This unlocks audio for all the setTimeout callbacks that follow.
+    warmAudio();
     haptic(settings.haptics, 18);
     setPage("Command");
     await fetch("/api/demo-trigger", { method: "POST" });
     playSwoosh(settings.sound);
     await refreshState();
-    setTimeout(() => { setPage("Breach");     playSwoosh(settings.sound); haptic(settings.haptics, 18); }, 800);
-    setTimeout(() => { setPage("Correction"); playSwoosh(settings.sound); haptic(settings.haptics, 18); }, 2800);
-    setTimeout(() => { setPage("Resolution"); playSwoosh(settings.sound); haptic(settings.haptics, 18); }, 5200);
+
+    setTimeout(() => {
+      setPage("Breach");
+      playAlert(settings.sound);          // urgent triple-pulse
+      haptic(settings.haptics, [30, 20, 30, 20, 30]);
+    }, 800);
+
+    setTimeout(() => {
+      setPage("Correction");
+      playSwoosh(settings.sound);         // processing whoosh
+      haptic(settings.haptics, 18);
+    }, 2800);
+
+    setTimeout(() => {
+      setPage("Resolution");
+      playTing(settings.sound);           // clean bell chime
+      haptic(settings.haptics, [10, 30, 10]);
+    }, 5200);
   };
 
   const goPage = (nextPage) => {
