@@ -1,0 +1,13 @@
+{
+  "name": "repoguard-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @workspace/repoguard run dev",
+    "build": "pnpm --filter @workspace/repoguard run build",
+    "typecheck": "pnpm --filter @workspace/repoguard run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
