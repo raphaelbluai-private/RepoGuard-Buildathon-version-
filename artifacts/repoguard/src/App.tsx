@@ -451,10 +451,28 @@ export default function App() {
 
   const triggerDemo = async () => {
     haptic(settings.haptics, 18);
+    setPage("Command");
     await fetch("/api/demo-trigger", { method: "POST" });
     playSwoosh(settings.sound);
-    setPage("Breach");
-    refreshState();
+    await refreshState();
+
+    setTimeout(() => {
+      setPage("Breach");
+      playSwoosh(settings.sound);
+      haptic(settings.haptics, 18);
+    }, 800);
+
+    setTimeout(() => {
+      setPage("Correction");
+      playSwoosh(settings.sound);
+      haptic(settings.haptics, 18);
+    }, 2800);
+
+    setTimeout(() => {
+      setPage("Resolution");
+      playSwoosh(settings.sound);
+      haptic(settings.haptics, 18);
+    }, 5200);
   };
 
   const goPage = (nextPage) => {
