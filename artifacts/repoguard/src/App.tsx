@@ -469,29 +469,26 @@ export default function App() {
     warmAudio();
     playClick(settings.sound);
     haptic(settings.haptics, 18);
-    setPage("Command");
 
     await fetch("/api/demo-trigger", { method: "POST" });
     playSwoosh(settings.sound);
-    await refreshState();
+    refreshState();
 
-    setTimeout(() => {
-      setPage("Breach");
-      playAlert(settings.sound);
-      haptic(settings.haptics, [30, 20, 30, 20, 30]);
-    }, 600);
+    setPage("Breach");
+    playAlert(settings.sound);
+    haptic(settings.haptics, [30, 20, 30, 20, 30]);
 
     setTimeout(() => {
       setPage("Correction");
       playSwoosh(settings.sound);
       haptic(settings.haptics, 18);
-    }, 1400);
+    }, 800);
 
     setTimeout(() => {
       setPage("Resolution");
       playTing(settings.sound);
       haptic(settings.haptics, [10, 30, 10]);
-    }, 2200);
+    }, 1600);
   };
 
   const goPage = (nextPage: string) => {
@@ -526,13 +523,13 @@ export default function App() {
             textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
             Security Monitoring
           </div>
-          <h1 style={{ margin: "0 0 8px", fontSize: "clamp(20px, 4vw, 28px)",
-            fontWeight: 800, lineHeight: 1.15, color: shellText }}>
+          <div style={{ fontSize: "clamp(20px, 4vw, 28px)", fontWeight: 800,
+            lineHeight: 1.15, color: shellText, margin: "0 0 6px" }}>
             Your API keys are already leaking.
-          </h1>
-          <p style={{ margin: "0 0 20px", fontSize: 15, color: subText, lineHeight: 1.6, maxWidth: 500 }}>
+          </div>
+          <div style={{ color: subText, marginTop: 4, marginBottom: 20, fontSize: 14, lineHeight: 1.6, maxWidth: 500 }}>
             RepoGuard blocks insecure code before it merges—automatically.
-          </p>
+          </div>
           <button onClick={triggerDemo} style={{
             background: "#C49A47", color: "#111", border: "none",
             borderRadius: 12, padding: "14px 28px",
@@ -540,7 +537,7 @@ export default function App() {
             boxShadow: "0 6px 24px rgba(196,154,71,0.35)",
             fontFamily: "inherit", letterSpacing: "0.01em",
           }}>
-            Simulate Breach
+            Simulate Breach (10s demo)
           </button>
         </div>
 
@@ -592,7 +589,10 @@ export default function App() {
             </span>
           </div>
 
-          {/* Exposed key with scan highlight */}
+          {/* Severity label + exposed key with scan highlight */}
+          <div style={{ color: "#FCA5A5", fontWeight: 700, marginBottom: 6, fontSize: 13 }}>
+            Severity: CRITICAL
+          </div>
           <div style={{ position: "relative", background: "rgba(252,165,165,0.07)",
             border: "1px solid rgba(252,165,165,0.28)", borderRadius: 12,
             padding: "14px 16px", overflow: "hidden", marginBottom: 14 }}>
@@ -675,17 +675,15 @@ export default function App() {
           </div>
 
           {/* 3 badges */}
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", marginBottom: 20 }}>
-            {[
-              { label: "Key Revoked",      color: "#FCA5A5" },
-              { label: "Checks Passed",    color: "#6EE7B7" },
-              { label: "Merge Unblocked",  color: "#93C5FD" },
-            ].map(({ label, color }) => (
-              <span key={label} style={{
-                background: `${color}12`, border: `1px solid ${color}44`,
-                color, borderRadius: 10, padding: "8px 14px",
-                fontSize: 13, fontWeight: 700, animation: "popIn 350ms ease both",
-              }}>{label}</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 20, marginTop: 12 }}>
+            {["Key Revoked", "Checks Passed", "Merge Unblocked"].map(t => (
+              <span key={t} style={{
+                padding: "6px 10px", borderRadius: 999,
+                background: "rgba(110,231,183,0.12)",
+                border: "1px solid rgba(110,231,183,0.35)",
+                color: "#6EE7B7", fontSize: 12, fontWeight: 600,
+                animation: "popIn 350ms ease both",
+              }}>{t}</span>
             ))}
           </div>
 

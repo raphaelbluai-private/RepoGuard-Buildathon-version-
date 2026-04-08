@@ -1,78 +1,62 @@
-🛡️ RepoGuard
-Stop insecure code before it reaches production.
-🚀 Overview
-RepoGuard is an enforcement-first security system that detects exposed secrets (like API keys), triggers automated remediation, and restores the system to a secure state—before code is merged.
-This isn’t monitoring. This is enforcement.
-⚡ Features
-🔍 Secret detection (API keys, high-entropy tokens)
-⚙️ Automated enforcement + remediation flow
-🔄 Full lifecycle visibility:
-Command → Breach → Correction → Resolution
-🧠 Demo-safe architecture (no external APIs required)
-🔐 Email + 2FA (demo mode)
-🎛️ Settings (sound, haptics, light/dark mode)
-📡 Live event feed# RepoGuard-Buildathon-version-
-🧪 Demo Credentials
-Plain text
+# RepoGuard
+
+**Your API keys are already leaking.**
+
+RepoGuard stops insecure code before it reaches production by detecting exposed secrets, blocking merges, and automatically fixing the issue.
+
+## 10-second demo
+Click "Simulate Breach" to see detection → enforcement → remediation → compliance restoration.
+
+## Overview
+RepoGuard is an enforcement-first security system that detects exposed secrets (like API keys), triggers automated remediation, and restores the system to a secure state—before code is merged. This isn't monitoring. This is enforcement.
+
+## Features
+- Secret detection (API keys, high-entropy tokens)
+- Automated enforcement + remediation flow
+- Full lifecycle visibility: Command → Breach → Correction → Resolution
+- Demo-safe architecture (no external APIs required)
+- Email + 2FA (demo mode)
+- Settings (sound, haptics, light/dark mode)
+- Live event feed
+
+## Demo Credentials
+```
 Email: demo@repoguard.ai
-Code: 123456
-🖥️ Run in Codespaces
-1. Start Backend
-Bash
+Code:  shown on screen after clicking "Send code"
+```
+
+## Run Locally
+**Backend**
+```bash
 cd backend
 pip install -r requirements.txt
 python run.py
-Runs on:
+# Runs on http://localhost:8000
+```
 
-http://localhost:8000
-2. Start Frontend
-Bash
-cd frontend
-npm install
-npm run dev
-Runs on:
+**Frontend**
+```bash
+cd artifacts/repoguard
+pnpm install
+pnpm dev
+# Runs on http://localhost:18733
+```
 
-http://localhost:5173
-🎬 Demo Flow
-Open the app
-Click “Simulate Breach”
-Navigate through:
-
-Command → Breach → Correction → Resolution
-Watch:
-live event feed
-compliance improvement
-system recovery
-🧠 How It Works
-Plain text
+## How It Works
+```
 Detect → Enforce → Fix → Secure
-Detects exposed secrets in code
-Triggers enforcement automatically
-Applies secure fix patterns
-Restores system to compliant state
-🏗️ Architecture
+```
+1. Detects exposed secrets in code
+2. Triggers enforcement automatically
+3. Applies secure fix patterns
+4. Restores system to compliant state
 
-frontend/   → UI + demo experience
-backend/    → API + detection + enforcement
-deploy/     → cloud + CI/CD scaffolding
-🔄 Modes
-Mode
-Behavior
-demo
-fully functional, no external APIs
-production
-activates real integrations
-☁️ Production-Ready Path
-RepoGuard is designed to scale into:
-AWS (ECS, RDS, Redis)
-Secrets Manager integration
-Real API key revocation
-CI/CD enforcement workflows
-🏆 Why This Matters
-Secrets leak.
-Developers miss things.
-Monitoring isn’t enough.
-RepoGuard ensures:
-Insecure code never makes it to production.
-🔥 Final Note
-This is a demo-enabled system backed by a production-grade architecture designed for real-world enforcement.
+## Architecture
+```
+artifacts/repoguard/   → React + Vite frontend
+backend/               → FastAPI + enforcement logic
+```
+
+## Why This Matters
+Secrets leak. Developers miss things. Monitoring isn't enough.
+RepoGuard ensures insecure code never makes it to production.
