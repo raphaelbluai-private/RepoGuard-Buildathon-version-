@@ -164,31 +164,46 @@ function MetricCard({ title, value, subvalue, theme }: any) {
 // ─── RepoRow ─────────────────────────────────────────────────────────────────
 function RepoRow({ repo, theme }: any) {
   const dark = theme === "dark";
+  const severityMap: Record<string, { label: string; color: string }> = {
+    critical: { label: "Critical", color: "#FCA5A5" },
+    warning:  { label: "Warning",  color: "#FCD34D" },
+    minor:    { label: "Minor",    color: "#93C5FD" },
+    none:     { label: "Secure",   color: "#6EE7B7" },
+    secure:   { label: "Secure",   color: "#6EE7B7" },
+  };
+  const sev = severityMap[repo.severity] || severityMap.none;
   return (
     <div style={{
-      display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-      flexWrap: "wrap", gap: 8,
+      display: "grid", gridTemplateColumns: "1.5fr 1fr auto", gap: 12,
+      padding: "14px 16px",
       background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-      borderRadius: 12, border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
-      marginBottom: 8, padding: "12px 14px",
+      borderRadius: 14, border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
+      marginBottom: 10,
     }}>
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>{repo.name}</span>
-          {repo.source && (
-            <span style={{
-              fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
-              background: dark ? "rgba(196,154,71,0.12)" : "rgba(196,154,71,0.10)",
-              color: "#C49A47", letterSpacing: "0.03em",
-            }}>{repo.source}</span>
-          )}
+        <div style={{ fontWeight: 700, fontSize: 14 }}>
+          <span style={{ color: "#C49A47" }}>{repo.source}</span>
+          {repo.source ? " · " : ""}{repo.name}
         </div>
-        <div style={{ color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)", fontSize: 12, marginTop: 2 }}>{repo.issue}</div>
+        <div style={{ color: dark ? "rgba(255,255,255,0.72)" : "rgba(28,44,69,0.72)", fontSize: 12, marginTop: 3 }}>
+          {repo.issue}
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-        <StatusBadge status={repo.status} theme={theme} />
-        <span style={{ fontSize: 10, color: dark ? "rgba(255,255,255,0.30)" : "rgba(28,44,69,0.30)" }}>
-          last checked: {repo.checked || "now"}
+      <div style={{ alignSelf: "center", fontWeight: 600, fontSize: 13,
+        color: dark ? "rgba(255,255,255,0.70)" : "rgba(28,44,69,0.70)" }}>
+        {repo.before}% → {repo.after}%
+      </div>
+      <div style={{ textAlign: "right", alignSelf: "center" }}>
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "6px 12px", borderRadius: 999,
+          background: dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
+          border: `1px solid ${sev.color}55`, color: sev.color,
+          fontSize: 13, fontWeight: 600,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: sev.color,
+            flexShrink: 0, boxShadow: `0 0 10px ${sev.color}88` }} />
+          {repo.status === "resolved" ? "Resolved" : sev.label}
         </span>
       </div>
     </div>
@@ -586,7 +601,9 @@ export default function App() {
           <MetricCard title="Compliance Score"
             value={`${animatingScore}%`}
             subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
-          <MetricCard title="Repositories" value={String(repos.length)} subvalue="Live monitored" theme={theme} />
+          <MetricCard title="Connected Sources"
+            value={String(new Set(repos.map((r: any) => r.source).filter(Boolean)).size)}
+            subvalue="Actively monitored" theme={theme} />
         </div>
 
         {/* Repo board */}
@@ -724,8 +741,18 @@ export default function App() {
             ))}
           </div>
 
-          <div style={{ textAlign: "center", color: subText, fontSize: 14, lineHeight: 1.6 }}>
-            Repository returned to compliant state.
+          <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+            {repos.map((repo: any) => (
+              <div key={repo.id} style={{ fontSize: 14 }}>
+                <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
+                {" · "}
+                {repo.name}
+                {" — "}
+                <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
+                  {repo.before}% → {repo.after}%
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </Panel>
