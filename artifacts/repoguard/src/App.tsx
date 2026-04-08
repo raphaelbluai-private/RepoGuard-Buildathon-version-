@@ -121,6 +121,7 @@ function StatusBadge({ status, theme }: { status: string; theme: string }) {
   const map: Record<string, { label: string; color: string }> = {
     secure:     { label: "Secure",          color: "#6EE7B7" },
     monitoring: { label: "Monitoring",      color: "#93C5FD" },
+    warning:    { label: "Warning",         color: "#FCD34D" },
     breach:     { label: "Breach Detected", color: "#FCA5A5" },
     correcting: { label: "Correcting",      color: "#FCD34D" },
     resolved:   { label: "Resolved",        color: "#6EE7B7" },
@@ -172,7 +173,16 @@ function RepoRow({ repo, theme }: any) {
       marginBottom: 8, padding: "12px 14px",
     }}>
       <div>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{repo.name}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{repo.name}</span>
+          {repo.source && (
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 999,
+              background: dark ? "rgba(196,154,71,0.12)" : "rgba(196,154,71,0.10)",
+              color: "#C49A47", letterSpacing: "0.03em",
+            }}>{repo.source}</span>
+          )}
+        </div>
         <div style={{ color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)", fontSize: 12, marginTop: 2 }}>{repo.issue}</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>

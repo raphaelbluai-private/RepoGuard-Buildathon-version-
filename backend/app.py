@@ -9,11 +9,40 @@ app = FastAPI()
 
 events = []
 repos = [
-    {"name": "api-service",  "issue": "No active issue", "status": "secure",  "checked": "now"},
-    {"name": "frontend",     "issue": "No active issue", "status": "secure",  "checked": "now"},
-    {"name": "worker-queue", "issue": "No active issue", "status": "secure",  "checked": "now"},
+    {
+        "id": "1",
+        "source": "GitHub",
+        "name": "api-service",
+        "issue": "No active issue",
+        "severity": "none",
+        "status": "secure",
+        "before": 72,
+        "after": 72,
+        "checked": "now",
+    },
+    {
+        "id": "2",
+        "source": "GitLab",
+        "name": "frontend",
+        "issue": "No active issue",
+        "severity": "none",
+        "status": "secure",
+        "before": 88,
+        "after": 88,
+        "checked": "now",
+    },
+    {
+        "id": "3",
+        "source": "Bitbucket",
+        "name": "worker-queue",
+        "issue": "No active issue",
+        "severity": "none",
+        "status": "secure",
+        "before": 94,
+        "after": 94,
+        "checked": "now",
+    },
 ]
-compliance = {"before": 72, "after": 72}
 system_status = {"status": "secure"}
 login_codes: Dict[str, str] = {}
 
@@ -34,9 +63,16 @@ app.add_middleware(
 def stamp(message: str):
     events.append({"message": message, "time": datetime.now().strftime("%H:%M:%S")})
 
+def calculate_global_compliance():
+    if not repos:
+        return {"before": 100, "after": 100}
+    before_avg = round(sum(repo["before"] for repo in repos) / len(repos))
+    after_avg = round(sum(repo["after"] for repo in repos) / len(repos))
+    return {"before": before_avg, "after": after_avg}
+
 @app.get("/api/events")
 def get_events():
-    return events[-5:]
+    return events[-6:]
 
 @app.get("/api/repos")
 def get_repos():
@@ -44,7 +80,7 @@ def get_repos():
 
 @app.get("/api/compliance")
 def get_compliance():
-    return compliance
+    return calculate_global_compliance()
 
 @app.get("/api/system-status")
 def get_system_status():
@@ -64,29 +100,41 @@ def verify_code(body: VerifyBody):
 @app.post("/api/demo-trigger")
 def trigger():
     events.clear()
-    compliance["before"] = 72
-    compliance["after"] = 72
     system_status["status"] = "breach"
 
-    repos[0]["issue"] = "Exposed secret in PR diff"
+    repos[0]["issue"] = "Confirmed secret exposure"
+    repos[0]["severity"] = "critical"
     repos[0]["status"] = "breach"
+    repos[0]["before"] = 72
+    repos[0]["after"] = 72
     repos[0]["checked"] = "now"
-    repos[1]["issue"] = "No active issue"
-    repos[1]["status"] = "secure"
+
+    repos[1]["issue"] = "Policy drift detected"
+    repos[1]["severity"] = "warning"
+    repos[1]["status"] = "warning"
+    repos[1]["before"] = 88
+    repos[1]["after"] = 88
     repos[1]["checked"] = "now"
-    repos[2]["issue"] = "No active issue"
-    repos[2]["status"] = "secure"
+
+    repos[2]["issue"] = "Minor config exposure"
+    repos[2]["severity"] = "minor"
+    repos[2]["status"] = "monitoring"
+    repos[2]["before"] = 94
+    repos[2]["after"] = 94
     repos[2]["checked"] = "now"
 
-    stamp("Breach detected in api-service")
-    stamp("Enforcement triggered")
-    stamp("Secret revoked")
-    stamp("PR created and checks enforced")
-    stamp("Repository secured")
+    stamp("Critical breach detected in GitHub / api-service")
+    stamp("Policy drift detected in GitLab / frontend")
+    stamp("Minor config exposure detected in Bitbucket / worker-queue")
+    stamp("Enforcement triggered across all monitored sources")
+    stamp("Secrets revoked, policies corrected, and checks enforced")
+    stamp("All monitored sources returned to compliant state")
 
-    repos[0]["issue"] = "Patched via Secret Engine"
-    repos[0]["status"] = "resolved"
-    compliance["after"] = 100
+    for repo in repos:
+        repo["status"] = "resolved"
+        repo["issue"] = "Repository returned to compliance"
+        repo["after"] = 100
+
     system_status["status"] = "resolved"
 
     return {"status": "ok"}
