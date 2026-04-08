@@ -189,6 +189,46 @@ function Panel({ children }: { children: React.ReactNode }) {
   return <div style={{ animation: "fadeSlide 280ms ease" }}>{children}</div>;
 }
 
+// ─── Repo platform options ────────────────────────────────────────────────────
+const REPO_PLATFORMS = [
+  {
+    group: "Code Hosting Platforms",
+    options: ["GitHub", "GitLab", "Bitbucket", "Gitea / Gogs", "Codeberg", "SourceForge"],
+  },
+  {
+    group: "Enterprise & Cloud",
+    options: ["Azure DevOps", "Google Cloud Source Repositories", "AWS CodeCommit", "OneDev", "SourceHut"],
+  },
+  {
+    group: "DevOps Platforms",
+    options: ["CloudBees Platform", "Azure Pipelines"],
+  },
+  {
+    group: "CI/CD & Deployment",
+    options: ["Harness", "Octopus Deploy", "Bitrise"],
+  },
+  {
+    group: "Infrastructure as Code",
+    options: ["AWS CloudFormation", "Red Hat Ansible Automation Platform"],
+  },
+  {
+    group: "Code Review & Quality",
+    options: ["CodeRabbit", "CodeAnt AI", "CodeScene", "Qodo"],
+  },
+  {
+    group: "Security",
+    options: ["Snyk"],
+  },
+  {
+    group: "Cloud Dev Environments",
+    options: ["Google Cloud Workstations", "AWS Cloud9", "Coder"],
+  },
+  {
+    group: "AI Coding Assistants",
+    options: ["Amazon Q Developer", "Gemini Code Assist", "Cursor", "Windsurf", "Claude", "Augment Code", "Launchpad"],
+  },
+];
+
 // ─── SettingsModal ────────────────────────────────────────────────────────────
 function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
   if (!open) return null;
@@ -196,12 +236,18 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
   const cardBg = dark ? "rgba(18,18,18,0.98)" : "rgba(255,255,255,0.99)";
   const text = dark ? "#FFFFFF" : "#1C2C45";
   const sep = dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.08)";
+  const inputBg = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.05)";
+  const inputBorder = dark ? "rgba(255,255,255,0.12)" : "rgba(28,44,69,0.14)";
 
-  const Row = ({ label, children }: any) => (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "14px 0", borderBottom: `1px solid ${sep}` }}>
-      <span style={{ fontSize: 15 }}>{label}</span>
-      <div>{children}</div>
+  const Row = ({ label, sublabel, children }: any) => (
+    <div style={{ padding: "14px 0", borderBottom: `1px solid ${sep}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <span style={{ fontSize: 15 }}>{label}</span>
+          {sublabel && <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.40)" : "rgba(28,44,69,0.45)", marginTop: 2 }}>{sublabel}</div>}
+        </div>
+        <div>{children}</div>
+      </div>
     </div>
   );
 
@@ -218,9 +264,10 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.52)",
-      display: "grid", placeItems: "center", zIndex: 1000, padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 460, background: cardBg, color: text,
-        borderRadius: 20, padding: "20px 24px", boxShadow: "0 28px 80px rgba(0,0,0,0.32)" }}>
+      display: "grid", placeItems: "center", zIndex: 1000, padding: 16, overflowY: "auto" }}>
+      <div style={{ width: "100%", maxWidth: 480, background: cardBg, color: text,
+        borderRadius: 20, padding: "20px 24px", boxShadow: "0 28px 80px rgba(0,0,0,0.32)",
+        margin: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>Settings</h2>
           <button onClick={onClose} style={{ border: "none",
@@ -228,8 +275,13 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
             color: text, fontSize: 18, cursor: "pointer", borderRadius: 8,
             width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
-        <Row label="Sound effects"><Toggle value={settings.sound} onChange={() => setSettings((s: any) => ({ ...s, sound: !s.sound }))} /></Row>
-        <Row label="Haptic feedback"><Toggle value={settings.haptics} onChange={() => setSettings((s: any) => ({ ...s, haptics: !s.haptics }))} /></Row>
+
+        <Row label="Sound effects">
+          <Toggle value={settings.sound} onChange={() => setSettings((s: any) => ({ ...s, sound: !s.sound }))} />
+        </Row>
+        <Row label="Haptic feedback">
+          <Toggle value={settings.haptics} onChange={() => setSettings((s: any) => ({ ...s, haptics: !s.haptics }))} />
+        </Row>
         <Row label="Appearance">
           <div style={{ display: "flex", gap: 8 }}>
             {["Light", "Dark"].map(t => (
@@ -245,8 +297,52 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
             ))}
           </div>
         </Row>
+
+        {/* Repository target */}
+        <div style={{ padding: "14px 0" }}>
+          <div style={{ fontSize: 15, marginBottom: 4 }}>Repository target</div>
+          <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.40)" : "rgba(28,44,69,0.45)", marginBottom: 10 }}>
+            Point RepoGuard at the platform hosting your repos
+          </div>
+          <div style={{ position: "relative" }}>
+            <select
+              value={settings.repoTarget || "GitHub"}
+              onChange={e => setSettings((s: any) => ({ ...s, repoTarget: e.target.value }))}
+              style={{
+                width: "100%", padding: "11px 36px 11px 14px",
+                background: inputBg, color: text,
+                border: `1px solid ${inputBorder}`, borderRadius: 12,
+                fontSize: 14, fontFamily: "inherit", cursor: "pointer",
+                appearance: "none", WebkitAppearance: "none",
+                outline: "none",
+              }}
+            >
+              {REPO_PLATFORMS.map(({ group, options }) => (
+                <optgroup key={group} label={group}>
+                  {options.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {/* Custom chevron */}
+            <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+              pointerEvents: "none", color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)",
+              fontSize: 12 }}>
+              ▾
+            </div>
+          </div>
+          {settings.repoTarget && settings.repoTarget !== "GitHub" && (
+            <div style={{ marginTop: 8, fontSize: 12,
+              color: dark ? "rgba(255,255,255,0.38)" : "rgba(28,44,69,0.40)",
+              fontStyle: "italic" }}>
+              Integration with {settings.repoTarget} — connection config coming soon
+            </div>
+          )}
+        </div>
+
         <button onClick={onClose} style={{
-          marginTop: 20, width: "100%", background: "#C49A47", color: "#111",
+          marginTop: 8, width: "100%", background: "#C49A47", color: "#111",
           border: "none", borderRadius: 12, padding: "13px 0", fontWeight: 700,
           fontSize: 15, cursor: "pointer", fontFamily: "inherit",
         }}>Done</button>
@@ -415,8 +511,11 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState("");
   const [settings, setSettings] = useState<any>(() => {
-    try { return JSON.parse(localStorage.getItem("repoguard-settings") || ""); }
-    catch { return { sound: true, haptics: true, theme: "dark" }; }
+    try {
+      const saved = JSON.parse(localStorage.getItem("repoguard-settings") || "");
+      return { sound: true, haptics: true, theme: "dark", repoTarget: "GitHub", ...saved };
+    }
+    catch { return { sound: true, haptics: true, theme: "dark", repoTarget: "GitHub" }; }
   });
   const lastEventCount = useRef(0);
   const activeIndex = useMemo(() => pages.indexOf(page), [page]);
