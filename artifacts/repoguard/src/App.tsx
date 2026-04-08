@@ -3,8 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
 // ─── Shared AudioContext ─────────────────────────────────────────────────────
-// One context, kept alive — never closed between sounds.
-// Must be created (or resumed) inside a user-gesture handler.
 let _ctx: AudioContext | null = null;
 
 function getCtx(): AudioContext | null {
@@ -15,11 +13,9 @@ function getCtx(): AudioContext | null {
   return _ctx;
 }
 
-// Call this on any user tap to unlock audio before the demo timers fire
 function warmAudio() {
   const ctx = getCtx();
   if (!ctx) return;
-  // Play a silent buffer — forces the browser to grant audio permission
   const buf = ctx.createBuffer(1, 1, 22050);
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -27,15 +23,28 @@ function warmAudio() {
   src.start(0);
 }
 
-function haptic(enabled, pattern: any = 10) {
+function haptic(enabled: boolean, pattern: any = 10) {
   if (!enabled) return;
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
-    navigator.vibrate(pattern);
-  }
+  if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern);
 }
 
-// Page-transition whoosh (descending triangle wave)
-function playSwoosh(enabled) {
+function playClick(enabled: boolean) {
+  if (!enabled) return;
+  const ctx = getCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(400, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.04, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.07);
+}
+
+function playSwoosh(enabled: boolean) {
   if (!enabled) return;
   const ctx = getCtx();
   if (!ctx) return;
@@ -46,20 +55,15 @@ function playSwoosh(enabled) {
   osc.type = "triangle";
   osc.frequency.setValueAtTime(540, now);
   osc.frequency.exponentialRampToValueAtTime(220, now + 0.22);
-  filter.type = "lowpass";
-  filter.frequency.setValueAtTime(1400, now);
+  filter.type = "lowpass"; filter.frequency.setValueAtTime(1400, now);
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.06, now + 0.03);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.26);
+  osc.connect(filter); filter.connect(gain); gain.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.26);
 }
 
-// Incoming event pop (short sine blip)
-function playPop(enabled) {
+function playPop(enabled: boolean) {
   if (!enabled) return;
   const ctx = getCtx();
   if (!ctx) return;
@@ -72,14 +76,11 @@ function playPop(enabled) {
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.055, now + 0.015);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.16);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(now); osc.stop(now + 0.16);
 }
 
-// Breach alert — low urgent pulse
-function playAlert(enabled) {
+function playAlert(enabled: boolean) {
   if (!enabled) return;
   const ctx = getCtx();
   if (!ctx) return;
@@ -92,20 +93,16 @@ function playAlert(enabled) {
     gain.gain.setValueAtTime(0.0001, now + offset);
     gain.gain.exponentialRampToValueAtTime(0.07, now + offset + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.14);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now + offset);
-    osc.stop(now + offset + 0.16);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now + offset); osc.stop(now + offset + 0.16);
   });
 }
 
-// Resolution ting — clean bell chime
-function playTing(enabled) {
+function playTing(enabled: boolean) {
   if (!enabled) return;
   const ctx = getCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Two harmonics for a bell-like quality
   [[880, 0.06], [1320, 0.03]].forEach(([freq, vol]) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -113,126 +110,135 @@ function playTing(enabled) {
     osc.frequency.setValueAtTime(freq as number, now);
     gain.gain.setValueAtTime(vol as number, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 1.5);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(now); osc.stop(now + 1.5);
   });
 }
 
-function StatusBadge({ status, theme }) {
+// ─── StatusBadge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status, theme }: { status: string; theme: string }) {
   const map: Record<string, { label: string; color: string }> = {
-    secure:     { label: "Secure",           color: "#6EE7B7" },
-    monitoring: { label: "Monitoring",       color: "#93C5FD" },
-    breach:     { label: "Breach Detected",  color: "#FCA5A5" },
-    correcting: { label: "Correcting",       color: "#FCD34D" },
-    resolved:   { label: "Resolved",         color: "#6EE7B7" },
+    secure:     { label: "Secure",          color: "#6EE7B7" },
+    monitoring: { label: "Monitoring",      color: "#93C5FD" },
+    breach:     { label: "Breach Detected", color: "#FCA5A5" },
+    correcting: { label: "Correcting",      color: "#FCD34D" },
+    resolved:   { label: "Resolved",        color: "#6EE7B7" },
   };
   const item = map[status] || map.monitoring;
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 6,
-      padding: "6px 10px", borderRadius: 999,
-      background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
-      border: `1px solid ${item.color}55`, color: item.color, fontSize: 12, whiteSpace: "nowrap",
+      padding: "5px 10px", borderRadius: 999,
+      background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.05)",
+      border: `1px solid ${item.color}55`, color: item.color,
+      fontSize: 12, whiteSpace: "nowrap", fontWeight: 600,
     }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color, flexShrink: 0,
-        boxShadow: `0 0 8px ${item.color}88` }} />
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color,
+        flexShrink: 0, boxShadow: `0 0 8px ${item.color}99` }} />
       {item.label}
     </span>
   );
 }
 
-function MetricCard({ title, value, subvalue, theme }) {
+// ─── MetricCard ───────────────────────────────────────────────────────────────
+function MetricCard({ title, value, subvalue, theme }: any) {
   const dark = theme === "dark";
   return (
     <div style={{
       background: dark ? "rgba(17,17,17,0.72)" : "rgba(255,255,255,0.9)",
       border: dark ? "1px solid rgba(196,154,71,0.20)" : "1px solid rgba(28,44,69,0.12)",
       borderRadius: 16, padding: "16px 18px",
-      boxShadow: "0 4px 20px rgba(0,0,0,0.10)",
     }}>
-      <div style={{ fontSize: 12, color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+      <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)",
+        marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>
         {title}
       </div>
       <div style={{ fontSize: 26, fontWeight: 700, color: "#C49A47", lineHeight: 1.1 }}>{value}</div>
-      {subvalue && (
-        <div style={{ marginTop: 5, fontSize: 12, color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)" }}>{subvalue}</div>
-      )}
+      {subvalue && <div style={{ marginTop: 5, fontSize: 12, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)" }}>{subvalue}</div>}
     </div>
   );
 }
 
-function RepoRow({ repo, theme }) {
+// ─── RepoRow ─────────────────────────────────────────────────────────────────
+function RepoRow({ repo, theme }: any) {
   const dark = theme === "dark";
   return (
-    <div className="repo-row" style={{
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+      flexWrap: "wrap", gap: 8,
       background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-      borderRadius: 12,
-      border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
+      borderRadius: 12, border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
       marginBottom: 8, padding: "12px 14px",
     }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{repo.name}</div>
-      <div style={{ color: dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)", fontSize: 13, marginTop: 2 }}>{repo.issue}</div>
-      <div style={{ marginTop: 6 }}>
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{repo.name}</div>
+        <div style={{ color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)", fontSize: 12, marginTop: 2 }}>{repo.issue}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
         <StatusBadge status={repo.status} theme={theme} />
+        <span style={{ fontSize: 10, color: dark ? "rgba(255,255,255,0.30)" : "rgba(28,44,69,0.30)" }}>
+          last checked: {repo.checked || "now"}
+        </span>
       </div>
     </div>
   );
 }
 
-function Panel({ children }) {
+// ─── Panel wrapper ────────────────────────────────────────────────────────────
+function Panel({ children }: { children: React.ReactNode }) {
   return <div style={{ animation: "fadeSlide 280ms ease" }}>{children}</div>;
 }
 
-function SettingsModal({ open, onClose, settings, setSettings, theme }) {
+// ─── SettingsModal ────────────────────────────────────────────────────────────
+function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
   if (!open) return null;
   const dark = theme === "dark";
-  const cardBg = dark ? "rgba(22,22,22,0.98)" : "rgba(255,255,255,0.99)";
+  const cardBg = dark ? "rgba(18,18,18,0.98)" : "rgba(255,255,255,0.99)";
   const text = dark ? "#FFFFFF" : "#1C2C45";
-  const borderColor = dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.08)";
+  const sep = dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.08)";
 
-  const Row = ({ label, children }) => (
+  const Row = ({ label, children }: any) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "14px 0", borderBottom: `1px solid ${borderColor}` }}>
+      padding: "14px 0", borderBottom: `1px solid ${sep}` }}>
       <span style={{ fontSize: 15 }}>{label}</span>
       <div>{children}</div>
     </div>
   );
 
-  const Toggle = ({ value, onChange }) => (
+  const Toggle = ({ value, onChange }: any) => (
     <button onClick={onChange} style={{
       background: value ? "#C49A47" : dark ? "rgba(255,255,255,0.12)" : "rgba(28,44,69,0.10)",
-      color: value ? "#111111" : text, border: "none", borderRadius: 999,
+      color: value ? "#111" : text, border: "none", borderRadius: 999,
       padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 14,
-      minWidth: 60, minHeight: 38,
+      minWidth: 60, minHeight: 38, fontFamily: "inherit",
     }}>
       {value ? "On" : "Off"}
     </button>
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.52)",
       display: "grid", placeItems: "center", zIndex: 1000, padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 480, background: cardBg, color: text,
-        borderRadius: 20, padding: "20px 24px", boxShadow: "0 28px 80px rgba(0,0,0,0.30)" }}>
+      <div style={{ width: "100%", maxWidth: 460, background: cardBg, color: text,
+        borderRadius: 20, padding: "20px 24px", boxShadow: "0 28px 80px rgba(0,0,0,0.32)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 20 }}>Settings</h2>
-          <button onClick={onClose} style={{ border: "none", background: dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.08)",
-            color: text, fontSize: 18, cursor: "pointer", borderRadius: 8, width: 36, height: 36,
-            display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          <button onClick={onClose} style={{ border: "none",
+            background: dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.07)",
+            color: text, fontSize: 18, cursor: "pointer", borderRadius: 8,
+            width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
-        <Row label="Sound effects"><Toggle value={settings.sound} onChange={() => setSettings(s => ({ ...s, sound: !s.sound }))} /></Row>
-        <Row label="Haptic feedback"><Toggle value={settings.haptics} onChange={() => setSettings(s => ({ ...s, haptics: !s.haptics }))} /></Row>
+        <Row label="Sound effects"><Toggle value={settings.sound} onChange={() => setSettings((s: any) => ({ ...s, sound: !s.sound }))} /></Row>
+        <Row label="Haptic feedback"><Toggle value={settings.haptics} onChange={() => setSettings((s: any) => ({ ...s, haptics: !s.haptics }))} /></Row>
         <Row label="Appearance">
           <div style={{ display: "flex", gap: 8 }}>
             {["Light", "Dark"].map(t => (
-              <button key={t} onClick={() => setSettings(s => ({ ...s, theme: t.toLowerCase() }))}
+              <button key={t} onClick={() => setSettings((s: any) => ({ ...s, theme: t.toLowerCase() }))}
                 style={{
-                  border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer",
-                  fontWeight: 700, fontSize: 14, minHeight: 38,
+                  border: "none", borderRadius: 10, padding: "8px 14px",
+                  cursor: "pointer", fontWeight: 700, fontSize: 14, minHeight: 38, fontFamily: "inherit",
                   background: settings.theme === t.toLowerCase() ? "#C49A47" : dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.08)",
-                  color: settings.theme === t.toLowerCase() ? "#111111" : text,
+                  color: settings.theme === t.toLowerCase() ? "#111" : text,
                 }}>
                 {t}
               </button>
@@ -240,16 +246,17 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }) {
           </div>
         </Row>
         <button onClick={onClose} style={{
-          marginTop: 20, width: "100%", background: "#C49A47", color: "#111111",
+          marginTop: 20, width: "100%", background: "#C49A47", color: "#111",
           border: "none", borderRadius: 12, padding: "13px 0", fontWeight: 700,
-          fontSize: 15, cursor: "pointer",
+          fontSize: 15, cursor: "pointer", fontFamily: "inherit",
         }}>Done</button>
       </div>
     </div>
   );
 }
 
-function AuthScreen({ theme, sound, haptics, onAuthenticated }) {
+// ─── AuthScreen ───────────────────────────────────────────────────────────────
+function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
   const [email, setEmail] = useState("demo@repoguard.ai");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
@@ -258,16 +265,18 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }) {
   const [error, setError] = useState("");
   const dark = theme === "dark";
   const bg = dark ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)" : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
-  const text = dark ? "#ffffff" : "#1C2C45";
-  const cardBg = dark ? "rgba(10,10,10,0.80)" : "rgba(255,255,255,0.95)";
-  const borderColor = dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.12)";
+  const text = dark ? "#fff" : "#1C2C45";
+  const cardBg = dark ? "rgba(10,10,10,0.82)" : "rgba(255,255,255,0.96)";
+  const border = dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.12)";
   const inputBg = dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.04)";
-  const subText = dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)";
+  const sub = dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)";
 
   const sendCode = async () => {
     if (!email.trim()) return;
-    setLoading(true);
-    setError("");
+    warmAudio();
+    playClick(sound);
+    haptic(haptics, 10);
+    setLoading(true); setError("");
     try {
       const res = await fetch("/api/auth/request-code", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -277,18 +286,16 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }) {
       setDemoCode(data.demo_code);
       setStep("code");
       playSwoosh(sound);
-      haptic(haptics, 10);
     } catch {
-      setError("Connection error. Is the backend running?");
-    } finally {
-      setLoading(false);
-    }
+      setError("Connection error — is the backend running?");
+    } finally { setLoading(false); }
   };
 
   const verifyCode = async () => {
     if (!code.trim()) return;
-    setLoading(true);
-    setError("");
+    playClick(sound);
+    haptic(haptics, 10);
+    setLoading(true); setError("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -304,90 +311,90 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }) {
         haptic(haptics, [50, 50, 50]);
       }
     } catch {
-      setError("Connection error. Is the backend running?");
-    } finally {
-      setLoading(false);
-    }
+      setError("Connection error — is the backend running?");
+    } finally { setLoading(false); }
   };
 
-  const inputStyle = {
+  const inputStyle: React.CSSProperties = {
     width: "100%", padding: "13px 14px", borderRadius: 12,
-    background: inputBg, border: `1px solid ${borderColor}`,
-    color: text, fontSize: 15, outline: "none", boxSizing: "border-box" as const,
+    background: inputBg, border: `1px solid ${border}`,
+    color: text, fontSize: 15, outline: "none", boxSizing: "border-box",
     fontFamily: "inherit",
   };
 
-  const btnStyle = {
+  const btnStyle: React.CSSProperties = {
     width: "100%", padding: "14px", borderRadius: 12,
-    background: "#C49A47", color: "#111111",
-    border: "none", fontWeight: 800, fontSize: 15, cursor: "pointer",
-    opacity: loading ? 0.7 : 1,
+    background: "#C49A47", color: "#111",
+    border: "none", fontWeight: 800, fontSize: 15,
+    cursor: loading ? "not-allowed" : "pointer",
+    opacity: loading ? 0.7 : 1, fontFamily: "inherit",
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: bg, display: "grid", placeItems: "center",
-      padding: "20px 16px", fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100dvh", background: bg, display: "grid",
+      placeItems: "center", padding: "20px 16px",
+      fontFamily: "Inter, system-ui, sans-serif" }}>
       <div style={{ width: "100%", maxWidth: 420, background: cardBg, color: text,
         borderRadius: 20, padding: "28px 24px",
-        border: `1px solid ${borderColor}`, boxShadow: "0 20px 60px rgba(0,0,0,0.20)" }}>
+        border: `1px solid ${border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
 
         <div style={{ marginBottom: 24 }}>
           <div style={{ color: "#C49A47", fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>RepoGuard</div>
-          <div style={{ color: subText, marginTop: 5, fontSize: 14 }}>Secure sign in with email and 2FA.</div>
+          <div style={{ color: sub, marginTop: 5, fontSize: 14 }}>Secure sign in with email and 2FA.</div>
         </div>
 
         {step === "email" ? (
           <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label style={{ display: "block", fontSize: 12, color: subText, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Email</label>
-              <input
-                style={inputStyle}
-                value={email}
+              <label style={{ display: "block", fontSize: 11, color: sub, marginBottom: 6,
+                fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Email</label>
+              <input style={inputStyle} value={email}
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && sendCode()}
-                type="email"
-                autoComplete="email"
-              />
+                type="email" autoComplete="email" />
             </div>
-            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px", background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
+            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px",
+              background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
             <button style={btnStyle} onClick={sendCode} disabled={loading}>
               {loading ? "Sending…" : "Send code"}
             </button>
+            <div style={{ textAlign: "center", fontSize: 12, color: sub, marginTop: -4 }}>
+              Use the code shown to enter instantly.
+            </div>
           </div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ background: dark ? "rgba(196,154,71,0.10)" : "rgba(196,154,71,0.08)",
-              border: "1px solid rgba(196,154,71,0.30)", borderRadius: 12, padding: "12px 14px" }}>
-              <div style={{ fontSize: 12, color: "#C49A47", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              border: "1px solid rgba(196,154,71,0.32)", borderRadius: 12, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 700,
+                textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
                 Demo verification code
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 28, fontWeight: 800, color: "#C49A47", letterSpacing: "0.15em" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 30, fontWeight: 800,
+                color: "#C49A47", letterSpacing: "0.18em" }}>
                 {demoCode}
               </div>
-              <div style={{ fontSize: 12, color: subText, marginTop: 4 }}>
-                Sent to {email}
-              </div>
+              <div style={{ fontSize: 11, color: sub, marginTop: 4 }}>Sent to {email}</div>
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: 12, color: subText, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Enter code</label>
-              <input
-                style={{ ...inputStyle, fontFamily: "monospace", fontSize: 20, letterSpacing: "0.2em", textAlign: "center" }}
+              <label style={{ display: "block", fontSize: 11, color: sub, marginBottom: 6,
+                fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Enter code</label>
+              <input style={{ ...inputStyle, fontFamily: "monospace", fontSize: 22,
+                letterSpacing: "0.22em", textAlign: "center" }}
                 value={code}
                 onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 onKeyDown={e => e.key === "Enter" && verifyCode()}
-                placeholder="000000"
-                inputMode="numeric"
-                maxLength={6}
-                autoFocus
-              />
+                placeholder="000000" inputMode="numeric" maxLength={6} autoFocus />
             </div>
-            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px", background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
+            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px",
+              background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
             <button style={btnStyle} onClick={verifyCode} disabled={loading}>
               {loading ? "Verifying…" : "Verify and enter"}
             </button>
             <button onClick={() => { setStep("email"); setCode(""); setError(""); }}
-              style={{ background: "transparent", border: "none", color: subText, cursor: "pointer", fontSize: 14, padding: "4px 0" }}>
+              style={{ background: "transparent", border: "none", color: sub,
+                cursor: "pointer", fontSize: 13, padding: "2px 0", fontFamily: "inherit" }}>
               ← Use a different email
             </button>
           </div>
@@ -397,16 +404,17 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }) {
   );
 }
 
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage] = useState("Command");
   const [events, setEvents] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
   const [score, setScore] = useState({ before: 72, after: 72 });
-  const [status, setStatus] = useState("monitoring");
+  const [status, setStatus] = useState("secure");
   const [animatingScore, setAnimatingScore] = useState(72);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState("");
-  const [settings, setSettings] = useState(() => {
+  const [settings, setSettings] = useState<any>(() => {
     try { return JSON.parse(localStorage.getItem("repoguard-settings") || ""); }
     catch { return { sound: true, haptics: true, theme: "dark" }; }
   });
@@ -419,14 +427,14 @@ export default function App() {
   }, [settings]);
 
   async function refreshState() {
-    const [eventsRes, reposRes, scoreRes, statusRes] = await Promise.all([
+    const [evR, reR, scR, stR] = await Promise.all([
       fetch("/api/events"), fetch("/api/repos"),
       fetch("/api/compliance"), fetch("/api/system-status"),
     ]);
-    setEvents(await eventsRes.json());
-    setRepos(await reposRes.json());
-    setScore(await scoreRes.json());
-    setStatus((await statusRes.json()).status);
+    setEvents(await evR.json());
+    setRepos(await reR.json());
+    setScore(await scR.json());
+    setStatus((await stR.json()).status);
   }
 
   useEffect(() => {
@@ -445,48 +453,48 @@ export default function App() {
       current += step;
       setAnimatingScore(current);
       if (current === target) clearInterval(timer);
-    }, 28);
+    }, 22);
     return () => clearInterval(timer);
   }, [score.after]);
 
   useEffect(() => {
     if (events.length > lastEventCount.current) {
       playPop(settings.sound);
-      haptic(settings.haptics, [10, 30, 10]);
+      haptic(settings.haptics, [10, 20, 10]);
       lastEventCount.current = events.length;
     }
   }, [events, settings.sound, settings.haptics]);
 
   const triggerDemo = async () => {
-    // Warm the AudioContext NOW while we're inside a direct user-gesture handler.
-    // This unlocks audio for all the setTimeout callbacks that follow.
     warmAudio();
+    playClick(settings.sound);
     haptic(settings.haptics, 18);
     setPage("Command");
+
     await fetch("/api/demo-trigger", { method: "POST" });
     playSwoosh(settings.sound);
     await refreshState();
 
     setTimeout(() => {
       setPage("Breach");
-      playAlert(settings.sound);          // urgent triple-pulse
+      playAlert(settings.sound);
       haptic(settings.haptics, [30, 20, 30, 20, 30]);
-    }, 800);
+    }, 600);
 
     setTimeout(() => {
       setPage("Correction");
-      playSwoosh(settings.sound);         // processing whoosh
+      playSwoosh(settings.sound);
       haptic(settings.haptics, 18);
-    }, 2800);
+    }, 1400);
 
     setTimeout(() => {
       setPage("Resolution");
-      playTing(settings.sound);           // clean bell chime
+      playTing(settings.sound);
       haptic(settings.haptics, [10, 30, 10]);
-    }, 5200);
+    }, 2200);
   };
 
-  const goPage = (nextPage) => {
+  const goPage = (nextPage: string) => {
     setPage(nextPage);
     playSwoosh(settings.sound);
     haptic(settings.haptics, 10);
@@ -497,31 +505,60 @@ export default function App() {
   }
 
   const dark = theme === "dark";
-  const shellBg = dark ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)" : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
+  const shellBg = dark
+    ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)"
+    : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
   const shellText = dark ? "white" : "#1C2C45";
-  const cardBg = dark ? "rgba(17,17,17,0.72)" : "rgba(255,255,255,0.90)";
+  const cardBg = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
-  const subText = dark ? "rgba(255,255,255,0.60)" : "rgba(28,44,69,0.60)";
+  const subText = dark ? "rgba(255,255,255,0.58)" : "rgba(28,44,69,0.58)";
 
-  const pageContent = {
+  // ── Page content ─────────────────────────────────────────────────────────
+  const pageContent: Record<string, React.ReactNode> = {
+
     Command: (
       <Panel>
-        <div className="metrics-grid">
-          <MetricCard title="System Status" value={status === "breach" ? "Active Breach" : status === "resolved" ? "Resolved" : "Monitoring"} subvalue="Autonomous enforcement online" theme={theme} />
-          <MetricCard title="Compliance Score" value={`${animatingScore}%`} subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
+        {/* Hero block */}
+        <div style={{ marginBottom: 20, padding: "22px 20px 24px",
+          background: dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)",
+          border: cardBorder, borderRadius: 18 }}>
+          <div style={{ fontSize: 13, color: "#C49A47", fontWeight: 700,
+            textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+            Security Monitoring
+          </div>
+          <h1 style={{ margin: "0 0 8px", fontSize: "clamp(20px, 4vw, 28px)",
+            fontWeight: 800, lineHeight: 1.15, color: shellText }}>
+            Your API keys are already leaking.
+          </h1>
+          <p style={{ margin: "0 0 20px", fontSize: 15, color: subText, lineHeight: 1.6, maxWidth: 500 }}>
+            RepoGuard blocks insecure code before it merges—automatically.
+          </p>
+          <button onClick={triggerDemo} style={{
+            background: "#C49A47", color: "#111", border: "none",
+            borderRadius: 12, padding: "14px 28px",
+            fontWeight: 800, fontSize: 15, cursor: "pointer",
+            boxShadow: "0 6px 24px rgba(196,154,71,0.35)",
+            fontFamily: "inherit", letterSpacing: "0.01em",
+          }}>
+            Simulate Breach
+          </button>
+        </div>
+
+        {/* Metrics */}
+        <div className="metrics-grid" style={{ marginBottom: 16 }}>
+          <MetricCard title="System Status"
+            value={status === "breach" ? "Active Breach" : status === "resolved" ? "Resolved" : "Monitoring"}
+            subvalue="Autonomous enforcement online" theme={theme} />
+          <MetricCard title="Compliance Score"
+            value={`${animatingScore}%`}
+            subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
           <MetricCard title="Repositories" value={String(repos.length)} subvalue="Live monitored" theme={theme} />
         </div>
 
-        <div style={{ marginTop: 18, background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-            <h2 style={{ color: "#C49A47", margin: 0, fontSize: 17 }}>Repository Status</h2>
-            <button onClick={triggerDemo} style={{
-              background: "#C49A47", color: "#111111", border: "none",
-              borderRadius: 10, padding: "10px 16px", fontWeight: 700,
-              cursor: "pointer", fontSize: 14, whiteSpace: "nowrap",
-            }}>
-              Run Demo
-            </button>
+        {/* Repo board */}
+        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "16px" }}>
+          <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 15, marginBottom: 12 }}>
+            Repository Status
           </div>
           {repos.map(repo => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
         </div>
@@ -530,17 +567,49 @@ export default function App() {
 
     Breach: (
       <Panel>
-        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px" }}>
-          <h2 style={{ color: "#C49A47", margin: "0 0 12px" }}>Detected Breach</h2>
-          <div style={{ background: dark ? "rgba(252,165,165,0.08)" : "rgba(252,165,165,0.10)",
-            border: "1px solid rgba(252,165,165,0.30)", borderRadius: 12, padding: "14px 16px",
-            fontFamily: "monospace", fontSize: 13, lineHeight: 1.6, color: "#FCA5A5", overflowX: "auto" }}>
-            {`OPENAI_API_KEY = "sk-demo1234567890EXPOSED"`}
+        <div style={{ background: cardBg, border: "1px solid rgba(252,165,165,0.30)",
+          borderRadius: 18, padding: "18px 16px", position: "relative", overflow: "hidden" }}>
+
+          {/* Pulsing red glow behind card */}
+          <div style={{ position: "absolute", inset: 0, borderRadius: 18, pointerEvents: "none",
+            background: "radial-gradient(ellipse at 50% 40%, rgba(252,165,165,0.07) 0%, transparent 70%)",
+            animation: "redPulse 1.8s ease-in-out infinite" }} />
+
+          {/* Header row */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+            marginBottom: 14, flexWrap: "wrap", gap: 8, position: "relative" }}>
+            <div>
+              <div style={{ fontSize: 11, color: "#FCA5A5", fontWeight: 700,
+                textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+                Live key detected in commit diff
+              </div>
+              <h2 style={{ margin: 0, fontSize: 20, color: "#FCA5A5" }}>Detected Breach</h2>
+            </div>
+            <span style={{ background: "rgba(252,165,165,0.12)", border: "1px solid rgba(252,165,165,0.35)",
+              color: "#FCA5A5", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700,
+              whiteSpace: "nowrap" }}>
+              Severity: Critical
+            </span>
           </div>
-          <div style={{ marginTop: 14, color: subText, fontSize: 14, lineHeight: 1.6 }}>
+
+          {/* Exposed key with scan highlight */}
+          <div style={{ position: "relative", background: "rgba(252,165,165,0.07)",
+            border: "1px solid rgba(252,165,165,0.28)", borderRadius: 12,
+            padding: "14px 16px", overflow: "hidden", marginBottom: 14 }}>
+            <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.6, color: "#FCA5A5", position: "relative", zIndex: 1 }}>
+              {`OPENAI_API_KEY = "sk-demo1234567890EXPOSED"`}
+            </div>
+            {/* Scan highlight */}
+            <div style={{ position: "absolute", top: 0, left: 0, width: "45%", height: "100%",
+              background: "linear-gradient(90deg, transparent, rgba(252,165,165,0.20), transparent)",
+              animation: "scanPass 1.6s ease-in-out infinite", pointerEvents: "none" }} />
+          </div>
+
+          <div style={{ color: subText, fontSize: 14, lineHeight: 1.65, marginBottom: 16, position: "relative" }}>
             A sensitive secret was detected in a pull request diff. RepoGuard halted the merge, revoked the credential, and triggered automated remediation.
           </div>
-          <div style={{ marginTop: 16 }}>
+
+          <div style={{ position: "relative" }}>
             {repos.map(repo => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
           </div>
         </div>
@@ -550,14 +619,37 @@ export default function App() {
     Correction: (
       <Panel>
         <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px" }}>
-          <h2 style={{ color: "#C49A47", margin: "0 0 12px" }}>Automated Correction</h2>
-          <div style={{ background: dark ? "rgba(252,211,77,0.06)" : "rgba(252,211,77,0.08)",
-            border: "1px solid rgba(252,211,77,0.25)", borderRadius: 12, padding: "14px 16px",
-            fontFamily: "monospace", fontSize: 13, lineHeight: 1.8, color: dark ? "#FCD34D" : "#92660a", overflowX: "auto" }}>
-            {`- OPENAI_API_KEY = "sk-demo1234567890EXPOSED"\n+ OPENAI_API_KEY = "[REVOKED — rotated via Secret Engine]"`}
+          {/* Header + badge */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+            marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+            <h2 style={{ color: "#C49A47", margin: 0, fontSize: 20 }}>Automated Correction</h2>
+            <span style={{ background: "rgba(110,231,183,0.10)", border: "1px solid rgba(110,231,183,0.30)",
+              color: "#6EE7B7", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700,
+              whiteSpace: "nowrap" }}>
+              PR Created · Merge Blocked
+            </span>
           </div>
-          <div style={{ marginTop: 14, color: subText, fontSize: 14, lineHeight: 1.6 }}>
-            The exposed key was revoked within milliseconds. A replacement was injected into the secret store and a corrected PR was automatically opened.
+
+          {/* Animated diff */}
+          <div style={{ borderRadius: 12, overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14 }}>
+            {/* Removed line */}
+            <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
+              padding: "10px 16px", background: "rgba(252,165,165,0.10)",
+              color: "#FCA5A5", animation: "fadeOutRed 400ms ease-out 200ms both",
+              borderBottom: "1px solid rgba(252,165,165,0.12)" }}>
+              {`- OPENAI_API_KEY = "sk-demo1234567890EXPOSED"`}
+            </div>
+            {/* Added line */}
+            <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
+              padding: "10px 16px", background: "rgba(110,231,183,0.08)",
+              color: "#6EE7B7", animation: "slideInGreen 400ms ease-out 500ms both" }}>
+              {`+ OPENAI_API_KEY = "[REVOKED — rotated via Secret Engine]"`}
+            </div>
+          </div>
+
+          <div style={{ color: subText, fontSize: 14, lineHeight: 1.65 }}>
+            Secrets moved to secure runtime. Direct access removed.
           </div>
         </div>
       </Panel>
@@ -565,15 +657,40 @@ export default function App() {
 
     Resolution: (
       <Panel>
-        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px" }}>
-          <h2 style={{ color: "#C49A47", margin: "0 0 14px" }}>Resolution</h2>
-          <div className="metrics-grid" style={{ marginBottom: 16 }}>
-            <MetricCard title="Compliance Score" value={`${animatingScore}%`} subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
-            <MetricCard title="Time to Resolve" value="< 1s" subvalue="Fully automated" theme={theme} />
-            <MetricCard title="Secrets Rotated" value="1" subvalue="Zero human action" theme={theme} />
+        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "20px 18px" }}>
+          <h2 style={{ color: "#C49A47", margin: "0 0 20px", fontSize: 20 }}>Resolution</h2>
+
+          {/* Big stat */}
+          <div style={{ textAlign: "center", padding: "20px 0 24px",
+            borderBottom: dark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(28,44,69,0.08)",
+            marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: subText, fontWeight: 700,
+              textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              Compliance Score
+            </div>
+            <div style={{ fontSize: "clamp(40px, 10vw, 64px)", fontWeight: 800,
+              color: "#C49A47", lineHeight: 1, letterSpacing: "-0.02em" }}>
+              {score.before}% → {animatingScore}%
+            </div>
           </div>
-          <div style={{ color: subText, fontSize: 14, lineHeight: 1.6 }}>
-            All checks passed. The repository is now secure. No human intervention was required — RepoGuard handled detection, revocation, and remediation end-to-end.
+
+          {/* 3 badges */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", marginBottom: 20 }}>
+            {[
+              { label: "Key Revoked",      color: "#FCA5A5" },
+              { label: "Checks Passed",    color: "#6EE7B7" },
+              { label: "Merge Unblocked",  color: "#93C5FD" },
+            ].map(({ label, color }) => (
+              <span key={label} style={{
+                background: `${color}12`, border: `1px solid ${color}44`,
+                color, borderRadius: 10, padding: "8px 14px",
+                fontSize: 13, fontWeight: 700, animation: "popIn 350ms ease both",
+              }}>{label}</span>
+            ))}
+          </div>
+
+          <div style={{ textAlign: "center", color: subText, fontSize: 14, lineHeight: 1.6 }}>
+            Repository returned to compliant state.
           </div>
         </div>
       </Panel>
@@ -582,47 +699,59 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100dvh", background: shellBg, color: shellText,
-      fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 40px" }}>
+      fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px" }}>
 
       <style>{`
         * { box-sizing: border-box; }
 
         @keyframes fadeSlide {
-          from { opacity: 0; transform: translateY(10px); }
+          from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes redPulse {
+          0%, 100% { opacity: 0.6; }
+          50%       { opacity: 1; }
+        }
+        @keyframes scanPass {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(320%); }
+        }
+        @keyframes fadeOutRed {
+          from { opacity: 1; }
+          to   { opacity: 0.35; }
+        }
+        @keyframes slideInGreen {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes popIn {
+          from { opacity: 0; transform: scale(0.88); }
+          to   { opacity: 1; transform: scale(1); }
         }
 
         .rg-wrap {
           max-width: 1160px;
           margin: 0 auto;
-          padding: 20px 16px 0;
+          padding: 18px 16px 0;
         }
 
-        /* Metric cards grid */
         .metrics-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 12px;
         }
 
-        /* Repo rows always stack */
-        .repo-row {
-          display: block;
-        }
-
-        /* Main 2-col layout: content left, feed right */
         .main-grid {
           display: grid;
-          grid-template-columns: 1fr 300px;
+          grid-template-columns: 1fr 290px;
           gap: 16px;
           align-items: start;
         }
 
-        /* Nav row */
         .nav-row {
           display: flex;
           gap: 8px;
-          margin-bottom: 20px;
+          margin-bottom: 18px;
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
@@ -635,9 +764,9 @@ export default function App() {
           border: 1px solid ${dark ? "rgba(255,255,255,0.09)" : "rgba(28,44,69,0.10)"};
           color: ${shellText};
           border-radius: 12px;
-          padding: 10px 16px;
+          padding: 10px 18px;
           cursor: pointer;
-          transition: all 160ms ease;
+          transition: background 150ms ease;
           white-space: nowrap;
           flex-shrink: 0;
           font-size: 14px;
@@ -645,28 +774,21 @@ export default function App() {
           font-family: inherit;
           min-height: 42px;
         }
-        .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.12)"}; }
+        .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.11)"}; }
         .nav-btn.active {
           background: #C49A47 !important;
-          color: #111111 !important;
+          color: #111 !important;
           border-color: #C49A47 !important;
-          box-shadow: 0 4px 16px rgba(196,154,71,0.30);
+          box-shadow: 0 4px 16px rgba(196,154,71,0.28);
         }
 
-        /* Tablet: stack sidebar */
         @media (max-width: 820px) {
-          .main-grid {
-            grid-template-columns: 1fr;
-          }
+          .main-grid { grid-template-columns: 1fr; }
         }
-
-        /* Mobile: 2-col metrics */
         @media (max-width: 640px) {
-          .rg-wrap { padding: 14px 12px 0; }
+          .rg-wrap { padding: 12px 12px 0; }
           .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
         }
-
-        /* Small mobile: 1-col metrics */
         @media (max-width: 400px) {
           .metrics-grid { grid-template-columns: 1fr; }
         }
@@ -677,23 +799,17 @@ export default function App() {
 
       <div className="rg-wrap">
 
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-          marginBottom: 20, gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ color: "#C49A47", fontSize: 26, fontWeight: 800, lineHeight: 1.1 }}>RepoGuard</div>
-            <div style={{ color: subText, marginTop: 3, fontSize: 13 }}>Stop insecure code before it merges.</div>
+        {/* App header — brand + controls */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: 16, gap: 12 }}>
+          <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
+            RepoGuard
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 12, color: subText, display: "none", maxWidth: 120,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-              className="user-email">
-              {authenticatedUser}
-            </span>
             <button onClick={() => { haptic(settings.haptics, 10); setSettingsOpen(true); }}
               style={{ background: cardBg, border: cardBorder, color: shellText,
-                borderRadius: 10, padding: "9px 14px", cursor: "pointer",
-                fontWeight: 600, fontSize: 14, whiteSpace: "nowrap", minHeight: 42, fontFamily: "inherit" }}>
+                borderRadius: 10, padding: "8px 14px", cursor: "pointer",
+                fontWeight: 600, fontSize: 13, minHeight: 40, fontFamily: "inherit" }}>
               ⚙ Settings
             </button>
             <StatusBadge status={status} theme={theme} />
@@ -703,7 +819,8 @@ export default function App() {
         {/* Nav tabs */}
         <div className="nav-row">
           {pages.map((p, i) => (
-            <button key={p} className={`nav-btn${activeIndex === i ? " active" : ""}`} onClick={() => goPage(p)}>
+            <button key={p} className={`nav-btn${activeIndex === i ? " active" : ""}`}
+              onClick={() => goPage(p)}>
               {p}
             </button>
           ))}
@@ -713,10 +830,10 @@ export default function App() {
         <div className="main-grid">
           <div>{pageContent[page]}</div>
 
-          {/* Live event feed */}
+          {/* Live Event Feed */}
           <div style={{ background: cardBg, border: cardBorder, borderRadius: 18,
             padding: "16px", height: "fit-content" }}>
-            <div style={{ color: "#C49A47", fontWeight: 700, marginBottom: 12, fontSize: 15 }}>
+            <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 14, marginBottom: 12 }}>
               Live Event Feed
             </div>
             <div style={{ display: "grid", gap: 8 }}>
@@ -725,7 +842,7 @@ export default function App() {
                   background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
                   border: dark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(28,44,69,0.07)",
                   borderRadius: 10, padding: "10px 12px",
-                  animation: "fadeSlide 240ms ease",
+                  animation: "fadeSlide 220ms ease",
                 }}>
                   <div style={{ fontSize: 13, lineHeight: 1.4 }}>{ev.message}</div>
                   <div style={{ marginTop: 3, fontSize: 11, color: subText }}>{ev.time}</div>
@@ -737,6 +854,7 @@ export default function App() {
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );

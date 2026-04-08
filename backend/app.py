@@ -9,9 +9,9 @@ app = FastAPI()
 
 events = []
 repos = [
-    {"name": "api-service", "issue": "No active issue", "status": "monitoring"},
-    {"name": "frontend", "issue": "No active issue", "status": "secure"},
-    {"name": "worker-queue", "issue": "No active issue", "status": "secure"},
+    {"name": "api-service",  "issue": "No active issue", "status": "secure",  "checked": "now"},
+    {"name": "frontend",     "issue": "No active issue", "status": "secure",  "checked": "now"},
+    {"name": "worker-queue", "issue": "No active issue", "status": "secure",  "checked": "now"},
 ]
 compliance = {"before": 72, "after": 72}
 system_status = {"status": "secure"}
@@ -36,7 +36,7 @@ def stamp(message: str):
 
 @app.get("/api/events")
 def get_events():
-    return events[-8:]
+    return events[-5:]
 
 @app.get("/api/repos")
 def get_repos():
@@ -65,23 +65,28 @@ def verify_code(body: VerifyBody):
 def trigger():
     events.clear()
     compliance["before"] = 72
-    compliance["after"] = 100
+    compliance["after"] = 72
     system_status["status"] = "breach"
 
-    repos[0]["issue"] = "Confirmed secret exposure"
+    repos[0]["issue"] = "Exposed secret in PR diff"
     repos[0]["status"] = "breach"
+    repos[0]["checked"] = "now"
     repos[1]["issue"] = "No active issue"
     repos[1]["status"] = "secure"
+    repos[1]["checked"] = "now"
     repos[2]["issue"] = "No active issue"
     repos[2]["status"] = "secure"
+    repos[2]["checked"] = "now"
 
     stamp("Breach detected in api-service")
     stamp("Enforcement triggered")
-    stamp("Secret revoked and PR created")
-    stamp("Checks passed and repository secured")
+    stamp("Secret revoked")
+    stamp("PR created and checks enforced")
+    stamp("Repository secured")
 
     repos[0]["issue"] = "Patched via Secret Engine"
     repos[0]["status"] = "resolved"
+    compliance["after"] = 100
     system_status["status"] = "resolved"
 
     return {"status": "ok"}
