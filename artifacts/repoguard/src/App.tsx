@@ -525,7 +525,7 @@ export default function App() {
                 cursor: "pointer",
               }}
             >
-              Simulate Breach
+              Run Demo
             </button>
           </div>
           {repos.map((repo) => (
