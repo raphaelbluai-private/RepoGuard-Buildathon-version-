@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySourcePicker";
 
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
@@ -189,55 +190,13 @@ function Panel({ children }: { children: React.ReactNode }) {
   return <div style={{ animation: "fadeSlide 280ms ease" }}>{children}</div>;
 }
 
-// ─── Repo platform options ────────────────────────────────────────────────────
-const REPO_PLATFORMS = [
-  {
-    group: "Code Hosting Platforms",
-    options: ["GitHub", "GitLab", "Bitbucket", "Gitea / Gogs", "Codeberg", "SourceForge"],
-  },
-  {
-    group: "Enterprise & Cloud",
-    options: ["Azure DevOps", "Google Cloud Source Repositories", "AWS CodeCommit", "OneDev", "SourceHut"],
-  },
-  {
-    group: "DevOps Platforms",
-    options: ["CloudBees Platform", "Azure Pipelines"],
-  },
-  {
-    group: "CI/CD & Deployment",
-    options: ["Harness", "Octopus Deploy", "Bitrise"],
-  },
-  {
-    group: "Infrastructure as Code",
-    options: ["AWS CloudFormation", "Red Hat Ansible Automation Platform"],
-  },
-  {
-    group: "Code Review & Quality",
-    options: ["CodeRabbit", "CodeAnt AI", "CodeScene", "Qodo"],
-  },
-  {
-    group: "Security",
-    options: ["Snyk"],
-  },
-  {
-    group: "Cloud Dev Environments",
-    options: ["Google Cloud Workstations", "AWS Cloud9", "Coder"],
-  },
-  {
-    group: "AI Coding Assistants",
-    options: ["Amazon Q Developer", "Gemini Code Assist", "Cursor", "Windsurf", "Claude", "Augment Code", "Launchpad"],
-  },
-];
-
 // ─── SettingsModal ────────────────────────────────────────────────────────────
-function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
+function SettingsModal({ open, onClose, settings, setSettings, theme, repos, onScan }: any) {
   if (!open) return null;
   const dark = theme === "dark";
   const cardBg = dark ? "rgba(18,18,18,0.98)" : "rgba(255,255,255,0.99)";
   const text = dark ? "#FFFFFF" : "#1C2C45";
   const sep = dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.08)";
-  const inputBg = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.05)";
-  const inputBorder = dark ? "rgba(255,255,255,0.12)" : "rgba(28,44,69,0.14)";
 
   const Row = ({ label, sublabel, children }: any) => (
     <div style={{ padding: "14px 0", borderBottom: `1px solid ${sep}` }}>
@@ -298,47 +257,16 @@ function SettingsModal({ open, onClose, settings, setSettings, theme }: any) {
           </div>
         </Row>
 
-        {/* Repository target */}
+        {/* Repository source picker */}
         <div style={{ padding: "14px 0" }}>
-          <div style={{ fontSize: 15, marginBottom: 4 }}>Repository target</div>
-          <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.40)" : "rgba(28,44,69,0.45)", marginBottom: 10 }}>
-            Point RepoGuard at the platform hosting your repos
-          </div>
-          <div style={{ position: "relative" }}>
-            <select
-              value={settings.repoTarget || "GitHub"}
-              onChange={e => setSettings((s: any) => ({ ...s, repoTarget: e.target.value }))}
-              style={{
-                width: "100%", padding: "11px 36px 11px 14px",
-                background: inputBg, color: text,
-                border: `1px solid ${inputBorder}`, borderRadius: 12,
-                fontSize: 14, fontFamily: "inherit", cursor: "pointer",
-                appearance: "none", WebkitAppearance: "none",
-                outline: "none",
-              }}
-            >
-              {REPO_PLATFORMS.map(({ group, options }) => (
-                <optgroup key={group} label={group}>
-                  {options.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            {/* Custom chevron */}
-            <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
-              pointerEvents: "none", color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)",
-              fontSize: 12 }}>
-              ▾
-            </div>
-          </div>
-          {settings.repoTarget && settings.repoTarget !== "GitHub" && (
-            <div style={{ marginTop: 8, fontSize: 12,
-              color: dark ? "rgba(255,255,255,0.38)" : "rgba(28,44,69,0.40)",
-              fontStyle: "italic" }}>
-              Integration with {settings.repoTarget} — connection config coming soon
-            </div>
-          )}
+          <RepositorySourcePicker
+            repos={(repos || []).map((r: any) => ({ id: r.name, name: r.name, status: r.status }))}
+            selectedPlatform={settings.repoTarget || "GitHub"}
+            selectedRepo={settings.selectedRepo || null}
+            onPlatformChange={(platform: string) => setSettings((s: any) => ({ ...s, repoTarget: platform }))}
+            onRepoChange={(repo: RepoItem) => setSettings((s: any) => ({ ...s, selectedRepo: repo }))}
+            onScan={() => { onScan?.(); onClose(); }}
+          />
         </div>
 
         <button onClick={onClose} style={{
@@ -892,7 +820,8 @@ export default function App() {
       `}</style>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}
-        settings={settings} setSettings={setSettings} theme={theme} />
+        settings={settings} setSettings={setSettings} theme={theme}
+        repos={repos} onScan={triggerDemo} />
 
       <div className="rg-wrap">
 

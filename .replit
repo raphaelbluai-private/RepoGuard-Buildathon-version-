@@ -64,6 +64,10 @@ externalPort = 3001
 localPort = 18734
 externalPort = 3002
 
+[[ports]]
+localPort = 18735
+externalPort = 4200
+
 [nix]
 packages = ["libxcrypt", "unzipNLS"]
 channel = "stable-25_05"
