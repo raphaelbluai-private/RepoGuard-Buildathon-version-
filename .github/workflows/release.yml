@@ -1,0 +1,38 @@
+name: RepoGuard Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Create release folder
+        run: |
+          mkdir -p artifacts/repoguard
+          cp -r frontend artifacts/repoguard/
+          cp -r backend artifacts/repoguard/
+          cp README.md artifacts/repoguard/
+          cp VERSION artifacts/repoguard/
+
+      - name: Zip release
+        run: |
+          cd artifacts
+          zip -r repoguard-${{ steps.version.outputs.version }}.zip repoguard
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repoguard-${{ steps.version.outputs.version }}
+          path: artifacts/repoguard-${{ steps.version.outputs.version }}.zip
