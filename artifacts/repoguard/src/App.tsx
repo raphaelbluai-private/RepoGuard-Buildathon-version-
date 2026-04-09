@@ -678,6 +678,13 @@ export default function App() {
     haptic(settings.haptics, 10);
   };
 
+  // ── Derived: filter repos by selected platform (must be before early return) ──
+  const activePlatform: string = settings.repoTarget || "GitHub";
+  const displayedRepos = useMemo(() => {
+    const matching = repos.filter((r: any) => r.source === activePlatform);
+    return matching.length > 0 ? matching : repos;
+  }, [repos, activePlatform]);
+
   if (!authenticatedUser) {
     return <AuthScreen theme={theme} sound={settings.sound} haptics={settings.haptics} onAuthenticated={setAuthenticatedUser} />;
   }
@@ -690,13 +697,6 @@ export default function App() {
   const cardBg = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
   const subText = dark ? "rgba(255,255,255,0.58)" : "rgba(28,44,69,0.58)";
-
-  // ── Derived: filter repos by selected platform ───────────────────────────
-  const activePlatform: string = settings.repoTarget || "GitHub";
-  const displayedRepos = useMemo(() => {
-    const matching = repos.filter((r: any) => r.source === activePlatform);
-    return matching.length > 0 ? matching : repos;
-  }, [repos, activePlatform]);
 
   // ── Page content ─────────────────────────────────────────────────────────
   const pageContent: Record<string, React.ReactNode> = {
