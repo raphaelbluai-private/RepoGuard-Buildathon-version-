@@ -270,17 +270,25 @@ function StatusBadge({ status, theme }: { status: string; theme: string }) {
 function MetricCard({ title, value, subvalue, theme }: any) {
   const dark = theme === "dark";
   return (
-    <div style={{
+    <div className="relative overflow-hidden rounded-2xl" style={{
       background: dark ? "rgba(17,17,17,0.72)" : "rgba(255,255,255,0.9)",
       border: dark ? "1px solid rgba(196,154,71,0.20)" : "1px solid rgba(28,44,69,0.12)",
-      borderRadius: 16, padding: "16px 18px",
+      padding: "16px 18px",
+      backdropFilter: "blur(12px)",
+      WebkitBackdropFilter: "blur(12px)",
+      boxShadow: dark
+        ? "0 4px 20px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.04)"
+        : "0 4px 20px rgba(28,44,69,0.08), inset 0 1px 0 rgba(255,255,255,0.80)",
     }}>
-      <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)",
-        marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>
-        {title}
+      <div className="pointer-events-none absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-scan-sweep" />
+      <div className="relative">
+        <div style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)",
+          marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 26, fontWeight: 700, color: "#C49A47", lineHeight: 1.1 }}>{value}</div>
+        {subvalue && <div style={{ marginTop: 5, fontSize: 12, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)" }}>{subvalue}</div>}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: "#C49A47", lineHeight: 1.1 }}>{value}</div>
-      {subvalue && <div style={{ marginTop: 5, fontSize: 12, color: dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)" }}>{subvalue}</div>}
     </div>
   );
 }
@@ -758,9 +766,13 @@ export default function App() {
     Command: (
       <Panel>
         {/* Hero block */}
-        <div style={{ marginBottom: 20, padding: "22px 20px 24px",
+        <div className="relative overflow-hidden" style={{ marginBottom: 20, padding: "22px 20px 24px",
           background: dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)",
-          border: cardBorder, borderRadius: 18 }}>
+          border: cardBorder, borderRadius: 18,
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+          boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(28,44,69,0.08)" }}>
+          <div className="pointer-events-none absolute inset-y-0 w-32 bg-gradient-to-r from-transparent via-white/4 to-transparent animate-scan-sweep" />
+          <div className="relative">
           <div style={{ fontSize: 13, color: "#C49A47", fontWeight: 700,
             textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
             Security Monitoring
@@ -781,6 +793,7 @@ export default function App() {
           }}>
             Simulate Breach (10s demo)
           </button>
+          </div>{/* end relative wrapper */}
         </div>
 
         {/* Metrics */}
@@ -832,10 +845,10 @@ export default function App() {
 
           {/* Scan-sweep effect */}
           <div className="pointer-events-none absolute inset-y-0 w-24 bg-gradient-to-r from-transparent via-red-400/10 to-transparent animate-scan-sweep" />
-
+          <div className="relative">
           {/* Header row */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-            marginBottom: 14, flexWrap: "wrap", gap: 8, position: "relative" }}>
+            marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
             <div>
               <div style={{ fontSize: 11, color: "#FCA5A5", fontWeight: 700,
                 textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
@@ -873,44 +886,50 @@ export default function App() {
           <div style={{ position: "relative" }}>
             {repos.map(repo => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
           </div>
+          </div>{/* end relative wrapper */}
         </div>
       </Panel>
     ),
 
     Correction: (
       <Panel>
-        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px" }}>
-          {/* Header + badge */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-            marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-            <h2 style={{ color: "#C49A47", margin: 0, fontSize: 20 }}>Automated Correction</h2>
-            <span style={{ background: "rgba(110,231,183,0.10)", border: "1px solid rgba(110,231,183,0.30)",
-              color: "#6EE7B7", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700,
-              whiteSpace: "nowrap" }}>
-              PR Created · Merge Blocked
-            </span>
-          </div>
-
-          {/* Animated diff */}
-          <div style={{ borderRadius: 12, overflow: "hidden",
-            border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14 }}>
-            {/* Removed line */}
-            <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
-              padding: "10px 16px", background: "rgba(252,165,165,0.10)",
-              color: "#FCA5A5", animation: "fadeOutRed 400ms ease-out 200ms both",
-              borderBottom: "1px solid rgba(252,165,165,0.12)" }}>
-              {`- OPENAI_API_KEY = "sk-demo1234567890EXPOSED"`}
+        <div className="relative overflow-hidden" style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "18px 16px",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+          boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(28,44,69,0.08)" }}>
+          <div className="pointer-events-none absolute inset-y-0 w-24 bg-gradient-to-r from-transparent via-emerald-400/5 to-transparent animate-scan-sweep" />
+          <div className="relative">
+            {/* Header + badge */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+              marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+              <h2 style={{ color: "#C49A47", margin: 0, fontSize: 20 }}>Automated Correction</h2>
+              <span style={{ background: "rgba(110,231,183,0.10)", border: "1px solid rgba(110,231,183,0.30)",
+                color: "#6EE7B7", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700,
+                whiteSpace: "nowrap" }}>
+                PR Created · Merge Blocked
+              </span>
             </div>
-            {/* Added line */}
-            <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
-              padding: "10px 16px", background: "rgba(110,231,183,0.08)",
-              color: "#6EE7B7", animation: "slideInGreen 400ms ease-out 500ms both" }}>
-              {`+ OPENAI_API_KEY = "[REVOKED — rotated via Secret Engine]"`}
-            </div>
-          </div>
 
-          <div style={{ color: subText, fontSize: 14, lineHeight: 1.65 }}>
-            Secrets moved to secure runtime. Direct access removed.
+            {/* Animated diff */}
+            <div style={{ borderRadius: 12, overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.08)", marginBottom: 14 }}>
+              {/* Removed line */}
+              <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
+                padding: "10px 16px", background: "rgba(252,165,165,0.10)",
+                color: "#FCA5A5", animation: "fadeOutRed 400ms ease-out 200ms both",
+                borderBottom: "1px solid rgba(252,165,165,0.12)" }}>
+                {`- OPENAI_API_KEY = "sk-demo1234567890EXPOSED"`}
+              </div>
+              {/* Added line */}
+              <div style={{ fontFamily: "monospace", fontSize: 13, lineHeight: 1.8,
+                padding: "10px 16px", background: "rgba(110,231,183,0.08)",
+                color: "#6EE7B7", animation: "slideInGreen 400ms ease-out 500ms both" }}>
+                {`+ OPENAI_API_KEY = "[REVOKED — rotated via Secret Engine]"`}
+              </div>
+            </div>
+
+            <div style={{ color: subText, fontSize: 14, lineHeight: 1.65 }}>
+              Secrets moved to secure runtime. Direct access removed.
+            </div>
           </div>
         </div>
       </Panel>
@@ -918,7 +937,11 @@ export default function App() {
 
     Resolution: (
       <Panel>
-        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "20px 18px" }}>
+        <div className="relative overflow-hidden" style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "20px 18px",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+          boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(28,44,69,0.08)" }}>
+          <div className="pointer-events-none absolute inset-y-0 w-24 bg-gradient-to-r from-transparent via-yellow-400/5 to-transparent animate-scan-sweep" />
+          <div className="relative">
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
             <h2 style={{ color: "#C49A47", margin: 0, fontSize: 20 }}>Resolution</h2>
             <span style={{
@@ -981,6 +1004,7 @@ export default function App() {
                   );
             })}
           </div>
+          </div>{/* end relative wrapper */}
         </div>
       </Panel>
     ),
