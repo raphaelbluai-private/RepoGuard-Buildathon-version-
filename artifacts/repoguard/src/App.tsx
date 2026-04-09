@@ -691,6 +691,13 @@ export default function App() {
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
   const subText = dark ? "rgba(255,255,255,0.58)" : "rgba(28,44,69,0.58)";
 
+  // ── Derived: filter repos by selected platform ───────────────────────────
+  const activePlatform: string = settings.repoTarget || "GitHub";
+  const displayedRepos = useMemo(() => {
+    const matching = repos.filter((r: any) => r.source === activePlatform);
+    return matching.length > 0 ? matching : repos;
+  }, [repos, activePlatform]);
+
   // ── Page content ─────────────────────────────────────────────────────────
   const pageContent: Record<string, React.ReactNode> = {
 
@@ -731,16 +738,25 @@ export default function App() {
             value={`${animatingScore}%`}
             subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
           <MetricCard title="Connected Sources"
-            value={String(new Set(repos.map((r: any) => r.source).filter(Boolean)).size)}
-            subvalue="Actively monitored" theme={theme} />
+            value={String(new Set(displayedRepos.map((r: any) => r.source).filter(Boolean)).size)}
+            subvalue={`${activePlatform} · Actively monitored`} theme={theme} />
         </div>
 
         {/* Repo board */}
         <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "16px" }}>
-          <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 15, marginBottom: 12 }}>
-            Repository Status
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 15 }}>
+              Repository Status
+            </div>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+              background: "rgba(196,154,71,0.12)", color: "#C49A47",
+              border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
+            }}>
+              {activePlatform}
+            </span>
           </div>
-          {repos.map(repo => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
+          {displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
         </div>
       </Panel>
     ),
