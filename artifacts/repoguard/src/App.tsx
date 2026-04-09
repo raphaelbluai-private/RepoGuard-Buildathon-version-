@@ -212,7 +212,7 @@ function ThreatBadge({ status }: { status: string }) {
   }[level];
 
   return (
-    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold mb-4 ${styles[level]}`}>
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${styles[level]}`}>
       <span className={`h-2.5 w-2.5 rounded-full bg-current ${dotClass}`} />
       {label}
     </div>
@@ -678,11 +678,9 @@ export default function App() {
 
   useEffect(() => {
     if (events.length > lastEventCount.current) {
-      playPop(settings.sound);
-      haptic(settings.haptics, [10, 20, 10]);
       lastEventCount.current = events.length;
     }
-  }, [events, settings.sound, settings.haptics]);
+  }, [events]);
 
   // Force 1-second re-renders so timeAgo labels stay fresh
   useEffect(() => {
@@ -692,7 +690,6 @@ export default function App() {
 
   const triggerDemo = async () => {
     warmAudio();
-    playClick(settings.sound);
     haptic(settings.haptics, 18);
 
     // Phase 1 — set breach in backend, jump to Breach page
@@ -1136,12 +1133,20 @@ export default function App() {
 
       <div className="rg-wrap">
 
-        {/* App header — brand + controls */}
+        {/* App header — brand · threat · live scan | settings · status */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: 16, gap: 12 }}>
-          <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
-            RepoGuard
+          marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
+
+          {/* Left: title + threat badge + live pulse */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
+              RepoGuard
+            </div>
+            <ThreatBadge status={displayStatus} />
+            <LivePulse theme={theme} />
           </div>
+
+          {/* Right: settings + status badge */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={() => { haptic(settings.haptics, 10); setSettingsOpen(true); }}
               style={{ background: cardBg, border: cardBorder, color: shellText,
@@ -1152,9 +1157,6 @@ export default function App() {
             <StatusBadge status={status} theme={theme} />
           </div>
         </div>
-
-        {/* Threat badge */}
-        <ThreatBadge status={displayStatus} />
 
         {/* Nav tabs */}
         <div className="nav-row">
