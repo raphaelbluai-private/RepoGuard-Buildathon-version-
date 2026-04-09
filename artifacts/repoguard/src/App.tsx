@@ -857,7 +857,16 @@ export default function App() {
     Resolution: (
       <Panel>
         <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "20px 18px" }}>
-          <h2 style={{ color: "#C49A47", margin: "0 0 20px", fontSize: 20 }}>Resolution</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+            <h2 style={{ color: "#C49A47", margin: 0, fontSize: 20 }}>Resolution</h2>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+              background: "rgba(196,154,71,0.12)", color: "#C49A47",
+              border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
+            }}>
+              {activePlatform}
+            </span>
+          </div>
 
           {/* Big stat */}
           <div style={{ textAlign: "center", padding: "20px 0 24px",
@@ -887,7 +896,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-            {repos.map((repo: any) => (
+            {displayedRepos.map((repo: any) => (
               <div key={repo.id} style={{ fontSize: 14 }}>
                 <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
                 {" · "}
