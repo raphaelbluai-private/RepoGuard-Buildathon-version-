@@ -57,7 +57,7 @@ export type RepoItem = {
 
 type Props = {
   repos: RepoItem[];
-  selectedPlatform: string | null;
+  selectedPlatforms: string[];
   selectedRepo: RepoItem | null;
   onPlatformChange: (platform: string) => void;
   onRepoChange: (repo: RepoItem) => void;
@@ -74,7 +74,7 @@ function RepoStatusDot({ status }: { status?: RepoItem["status"] }) {
 
 export function RepositorySourcePicker({
   repos,
-  selectedPlatform,
+  selectedPlatforms,
   selectedRepo,
   onPlatformChange,
   onRepoChange,
@@ -103,37 +103,64 @@ export function RepositorySourcePicker({
     return repos.filter((repo) => repo.name.toLowerCase().includes(q));
   }, [repoQuery, repos]);
 
+  const selectionLabel =
+    selectedPlatforms.length === 0
+      ? "None selected"
+      : selectedPlatforms.length === 1
+      ? selectedPlatforms[0]
+      : `${selectedPlatforms.length} sources selected`;
+
   return (
     <div className="w-full space-y-4">
       <div className="space-y-1">
         <label className="text-sm font-semibold tracking-wide text-[#F8F4ED]">
-          Repository Source
+          Repository Sources
         </label>
         <p className="text-xs text-white/60">
-          Choose where the repository is housed, then select the repository to scan.
+          Select one or more platforms to monitor. Toggle each source on or off.
         </p>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#111111]/70 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+        {/* Selection summary */}
+        {selectedPlatforms.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {selectedPlatforms.map((p) => (
+              <span
+                key={p}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#C49A47]/15 border border-[#C49A47]/30 px-3 py-1 text-xs font-semibold text-[#C49A47]"
+              >
+                {p}
+                <button
+                  type="button"
+                  onClick={() => onPlatformChange(p)}
+                  className="ml-0.5 text-[#C49A47]/70 hover:text-[#C49A47] leading-none"
+                  aria-label={`Remove ${p}`}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Quick-pick primary platforms */}
         <div className="mb-4 flex flex-wrap gap-2">
           {PRIMARY_REPO_PLATFORMS.map((platform) => {
-            const active = selectedPlatform === platform;
+            const active = selectedPlatforms.includes(platform);
             return (
               <button
                 key={platform}
                 type="button"
-                onClick={() => {
-                  onPlatformChange(platform);
-                  setPlatformOpen(false);
-                }}
+                onClick={() => onPlatformChange(platform)}
                 className={[
-                  "rounded-full px-4 py-2 text-sm font-medium transition-all duration-150",
+                  "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150",
                   active
                     ? "bg-[#C49A47] text-[#111111] shadow-[0_8px_24px_rgba(196,154,71,0.25)]"
                     : "border border-white/10 bg-white/5 text-white hover:border-[#C49A47]/35 hover:bg-white/10",
                 ].join(" ")}
               >
+                {active && <Check className="h-3.5 w-3.5" />}
                 {platform}
               </button>
             );
@@ -173,16 +200,12 @@ export function RepositorySourcePicker({
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {group.options.map((option) => {
-                        const active = selectedPlatform === option;
+                        const active = selectedPlatforms.includes(option);
                         return (
                           <button
                             key={option}
                             type="button"
-                            onClick={() => {
-                              onPlatformChange(option);
-                              setPlatformOpen(false);
-                              setPlatformQuery("");
-                            }}
+                            onClick={() => onPlatformChange(option)}
                             className={[
                               "inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm transition-all duration-150",
                               active
@@ -203,12 +226,12 @@ export function RepositorySourcePicker({
           </div>
         )}
 
-        {/* Repo picker — shown once a platform is selected */}
-        {selectedPlatform && (
+        {/* Repo picker — shown once at least one platform is selected */}
+        {selectedPlatforms.length > 0 && (
           <div className="space-y-3">
             <div className="text-sm font-medium text-[#F8F4ED]">
               Select repository from{" "}
-              <span className="text-[#C49A47]">{selectedPlatform}</span>
+              <span className="text-[#C49A47]">{selectionLabel}</span>
             </div>
 
             <div className="relative">
@@ -252,11 +275,11 @@ export function RepositorySourcePicker({
               )}
             </div>
 
-            {selectedPlatform && selectedRepo && (
+            {selectedRepo && (
               <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[#C49A47]/25 bg-[#0F2C4F]/55 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="text-sm text-white">
                   <span className="text-white/60">Selected:</span>{" "}
-                  <span className="font-semibold text-[#C49A47]">{selectedPlatform}</span>
+                  <span className="font-semibold text-[#C49A47]">{selectionLabel}</span>
                   {" → "}
                   <span className="font-semibold">{selectedRepo.name}</span>
                 </div>

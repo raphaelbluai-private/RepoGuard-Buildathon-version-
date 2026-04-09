@@ -409,9 +409,15 @@ function SettingsModal({ open, onClose, settings, setSettings, theme, repos, onS
         <div style={{ padding: "14px 0" }}>
           <RepositorySourcePicker
             repos={(repos || []).map((r: any) => ({ id: r.name, name: r.name, status: r.status }))}
-            selectedPlatform={settings.repoTarget || "GitHub"}
+            selectedPlatforms={settings.repoTargets?.length ? settings.repoTargets : ["GitHub"]}
             selectedRepo={settings.selectedRepo || null}
-            onPlatformChange={(platform: string) => setSettings((s: any) => ({ ...s, repoTarget: platform }))}
+            onPlatformChange={(platform: string) => setSettings((s: any) => {
+              const current: string[] = s.repoTargets?.length ? s.repoTargets : ["GitHub"];
+              const next = current.includes(platform)
+                ? current.filter((p: string) => p !== platform)
+                : [...current, platform];
+              return { ...s, repoTargets: next.length > 0 ? next : ["GitHub"] };
+            })}
             onRepoChange={(repo: RepoItem) => setSettings((s: any) => ({ ...s, selectedRepo: repo }))}
             onScan={() => { onScan?.(); onClose(); }}
           />
@@ -589,9 +595,12 @@ export default function App() {
   const [settings, setSettings] = useState<any>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("repoguard-settings") || "");
-      return { sound: true, haptics: true, theme: "dark", repoTarget: "GitHub", ...saved };
+      const repoTargets = saved.repoTargets?.length
+        ? saved.repoTargets
+        : saved.repoTarget ? [saved.repoTarget] : ["GitHub"];
+      return { sound: true, haptics: true, theme: "dark", ...saved, repoTargets };
     }
-    catch { return { sound: true, haptics: true, theme: "dark", repoTarget: "GitHub" }; }
+    catch { return { sound: true, haptics: true, theme: "dark", repoTargets: ["GitHub"] }; }
   });
   const lastEventCount = useRef(0);
   const activeIndex = useMemo(() => pages.indexOf(page), [page]);
@@ -679,11 +688,14 @@ export default function App() {
   };
 
   // ── Derived: filter repos by selected platform (must be before early return) ──
-  const activePlatform: string = settings.repoTarget || "GitHub";
-  const displayedRepos = useMemo(() => {
-    const matching = repos.filter((r: any) => r.source === activePlatform);
-    return matching.length > 0 ? matching : repos;
-  }, [repos, activePlatform]);
+  const activePlatforms: string[] = settings.repoTargets?.length ? settings.repoTargets : ["GitHub"];
+  const platformLabel = activePlatforms.length === 1
+    ? activePlatforms[0]
+    : `${activePlatforms.length} Sources`;
+  const displayedRepos = useMemo(
+    () => repos.filter((r: any) => activePlatforms.includes(r.source)),
+    [repos, activePlatforms.join(",")]
+  );
 
   if (!authenticatedUser) {
     return <AuthScreen theme={theme} sound={settings.sound} haptics={settings.haptics} onAuthenticated={setAuthenticatedUser} />;
@@ -738,8 +750,8 @@ export default function App() {
             value={`${animatingScore}%`}
             subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
           <MetricCard title="Connected Sources"
-            value="1"
-            subvalue={`${activePlatform} · Actively monitored`} theme={theme} />
+            value={String(activePlatforms.length)}
+            subvalue={`${platformLabel} · Actively monitored`} theme={theme} />
         </div>
 
         {/* Repo board */}
@@ -753,10 +765,14 @@ export default function App() {
               background: "rgba(196,154,71,0.12)", color: "#C49A47",
               border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
             }}>
-              {activePlatform}
+              {platformLabel}
             </span>
           </div>
-          {displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} sourceLabel={activePlatform} />)}
+          {displayedRepos.length === 0
+            ? <div style={{ padding: "18px 0", textAlign: "center", color: subText, fontSize: 13 }}>
+                No repositories connected for the selected sources.
+              </div>
+            : displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
         </div>
       </Panel>
     ),
@@ -864,7 +880,7 @@ export default function App() {
               background: "rgba(196,154,71,0.12)", color: "#C49A47",
               border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
             }}>
-              {activePlatform}
+              {platformLabel}
             </span>
           </div>
 
@@ -896,17 +912,22 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-            {displayedRepos.map((repo: any) => (
-              <div key={repo.id} style={{ fontSize: 14 }}>
-                <span style={{ color: "#C49A47", fontWeight: 700 }}>{activePlatform}</span>
-                {" · "}
-                {repo.name}
-                {" — "}
-                <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
-                  {repo.before}% → {repo.after}%
-                </span>
-              </div>
-            ))}
+            {displayedRepos.length === 0
+              ? <div style={{ textAlign: "center", color: subText, fontSize: 13, padding: "10px 0" }}>
+                  No repositories connected for the selected sources.
+                </div>
+              : displayedRepos.map((repo: any) => (
+                <div key={repo.id} style={{ fontSize: 14 }}>
+                  <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
+                  {" · "}
+                  {repo.name}
+                  {" — "}
+                  <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
+                    {repo.before}% → {repo.after}%
+                  </span>
+                </div>
+              ))
+            }
           </div>
         </div>
       </Panel>
