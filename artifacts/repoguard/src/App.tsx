@@ -183,27 +183,38 @@ function LivePulse({ theme }: { theme: string }) {
   );
 }
 
-// ─── ThreatBanner ─────────────────────────────────────────────────────────────
-function ThreatBanner({ status, theme }: { status: string; theme: string }) {
-  const dark = theme === "dark";
-  const map: Record<string, { label: string; color: string }> = {
-    secure:     { label: "Threat Level: Low",              color: "#93C5FD" },
-    monitoring: { label: "Threat Level: Low",              color: "#93C5FD" },
-    breach:     { label: "Threat Level: Critical",         color: "#FCA5A5" },
-    correcting: { label: "Threat Level: Correcting",       color: "#FCD34D" },
-    resolved:   { label: "Threat Level: Stabilized",       color: "#6EE7B7" },
+// ─── ThreatBadge ──────────────────────────────────────────────────────────────
+function ThreatBadge({ status }: { status: string }) {
+  const levelMap: Record<string, "low" | "warning" | "critical" | "stabilized"> = {
+    secure:     "low",
+    monitoring: "low",
+    warning:    "warning",
+    correcting: "warning",
+    breach:     "critical",
+    resolved:   "stabilized",
   };
-  const item = map[status] || map.monitoring;
+  const level = levelMap[status] ?? "low";
+
+  const styles: Record<string, string> = {
+    low:        "bg-blue-500/10 text-blue-300 border-blue-400/30",
+    warning:    "bg-yellow-500/10 text-yellow-300 border-yellow-400/30",
+    critical:   "bg-red-500/10 text-red-300 border-red-400/30",
+    stabilized: "bg-emerald-500/10 text-emerald-300 border-emerald-400/30",
+  };
+
+  const dotClass = level === "critical" ? "animate-threat-pulse" : "animate-pulse";
+
+  const label = {
+    low:        "Threat Level: Low",
+    warning:    "Threat Level: Warning",
+    critical:   "Threat Level: Critical",
+    stabilized: "Threat Level: Stabilized",
+  }[level];
+
   return (
-    <div style={{
-      marginBottom: 18, padding: "10px 16px", borderRadius: 14,
-      border: `1px solid ${item.color}44`,
-      background: dark ? "rgba(17,17,17,0.60)" : "rgba(255,255,255,0.88)",
-      color: item.color, fontWeight: 700, letterSpacing: "0.03em", fontSize: 13,
-      display: "flex", alignItems: "center", gap: 10,
-    }}>
-      <LiveStatusDot color={item.color} />
-      {item.label}
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold mb-4 ${styles[level]}`}>
+      <span className={`h-2.5 w-2.5 rounded-full bg-current ${dotClass}`} />
+      {label}
     </div>
   );
 }
@@ -788,25 +799,26 @@ export default function App() {
             subvalue={`${platformLabel} · Actively monitored`} theme={theme} />
         </div>
 
-        {/* Repo board */}
-        <div style={{ background: cardBg, border: cardBorder, borderRadius: 18, padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 15 }}>
-              Repository Status
+        {/* Repo board — with scan-sweep */}
+        <div className="relative overflow-hidden rounded-2xl" style={{ border: cardBorder, background: cardBg, padding: "16px" }}>
+          <div className="pointer-events-none absolute inset-y-0 w-24 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-scan-sweep" />
+          <div className="relative">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 15 }}>Repository Status</div>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+                background: "rgba(196,154,71,0.12)", color: "#C49A47",
+                border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
+              }}>
+                {platformLabel}
+              </span>
             </div>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
-              background: "rgba(196,154,71,0.12)", color: "#C49A47",
-              border: "1px solid rgba(196,154,71,0.25)", letterSpacing: "0.04em",
-            }}>
-              {platformLabel}
-            </span>
+            {displayedRepos.length === 0
+              ? <div style={{ padding: "18px 0", textAlign: "center", color: subText, fontSize: 13 }}>
+                  No repositories connected for the selected sources.
+                </div>
+              : displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
           </div>
-          {displayedRepos.length === 0
-            ? <div style={{ padding: "18px 0", textAlign: "center", color: subText, fontSize: 13 }}>
-                No repositories connected for the selected sources.
-              </div>
-            : displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
         </div>
       </Panel>
     ),
@@ -820,6 +832,9 @@ export default function App() {
           <div style={{ position: "absolute", inset: 0, borderRadius: 18, pointerEvents: "none",
             background: "radial-gradient(ellipse at 50% 40%, rgba(252,165,165,0.07) 0%, transparent 70%)",
             animation: "redPulse 1.8s ease-in-out infinite" }} />
+
+          {/* Scan-sweep effect */}
+          <div className="pointer-events-none absolute inset-y-0 w-24 bg-gradient-to-r from-transparent via-red-400/10 to-transparent animate-scan-sweep" />
 
           {/* Header row */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
@@ -979,19 +994,13 @@ export default function App() {
       fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px", position: "relative" }}>
 
       {/* Ambient background orbs */}
-      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
-        <div style={{
-          position: "absolute", top: "-10%", left: "-5%",
-          width: 420, height: 420, borderRadius: "50%",
-          background: "rgba(196,154,71,0.08)", filter: "blur(80px)",
-          animation: "driftOne 12s ease-in-out infinite alternate",
-        }} />
-        <div style={{
-          position: "absolute", bottom: "-10%", right: "-5%",
-          width: 360, height: 360, borderRadius: "50%",
-          background: "rgba(30,144,255,0.08)", filter: "blur(80px)",
-          animation: "driftTwo 14s ease-in-out infinite alternate",
-        }} />
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" style={{ zIndex: 0 }}>
+        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full blur-3xl animate-drift-slow"
+          style={{ background: "rgba(196,154,71,0.10)" }} />
+        <div className="absolute -right-24 bottom-0 h-96 w-96 rounded-full blur-3xl animate-drift-reverse"
+          style={{ background: "rgba(59,130,246,0.09)" }} />
+        <div className="absolute left-1/3 top-1/4 h-64 w-64 rounded-full blur-3xl animate-drift-slower"
+          style={{ background: "rgba(239,68,68,0.05)" }} />
       </div>
 
       <style>{`
@@ -1144,8 +1153,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Threat level banner */}
-        <ThreatBanner status={displayStatus} theme={theme} />
+        {/* Threat badge */}
+        <ThreatBadge status={displayStatus} />
 
         {/* Nav tabs */}
         <div className="nav-row">
