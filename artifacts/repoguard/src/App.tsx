@@ -251,7 +251,7 @@ function MetricCard({ title, value, subvalue, theme }: any) {
 }
 
 // ─── RepoRow ─────────────────────────────────────────────────────────────────
-function RepoRow({ repo, theme }: any) {
+function RepoRow({ repo, theme, sourceLabel }: any) {
   const dark = theme === "dark";
   const isMobile = useIsMobile();
   const severityMap: Record<string, { label: string; color: string }> = {
@@ -305,8 +305,8 @@ function RepoRow({ repo, theme }: any) {
       }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 14 }}>
-            <span style={{ color: "#C49A47" }}>{repo.source}</span>
-            {repo.source ? " · " : ""}{repo.name}
+            <span style={{ color: "#C49A47" }}>{sourceLabel || repo.source}</span>
+            {(sourceLabel || repo.source) ? " · " : ""}{repo.name}
           </div>
           <div style={{ color: dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)", fontSize: 12, marginTop: 2 }}>
             {repo.issue}
@@ -738,7 +738,7 @@ export default function App() {
             value={`${animatingScore}%`}
             subvalue={`${score.before}% → ${score.after}%`} theme={theme} />
           <MetricCard title="Connected Sources"
-            value={String(new Set(displayedRepos.map((r: any) => r.source).filter(Boolean)).size)}
+            value="1"
             subvalue={`${activePlatform} · Actively monitored`} theme={theme} />
         </div>
 
@@ -756,7 +756,7 @@ export default function App() {
               {activePlatform}
             </span>
           </div>
-          {displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} />)}
+          {displayedRepos.map((repo: any) => <RepoRow key={repo.name} repo={repo} theme={theme} sourceLabel={activePlatform} />)}
         </div>
       </Panel>
     ),
@@ -898,7 +898,7 @@ export default function App() {
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
             {displayedRepos.map((repo: any) => (
               <div key={repo.id} style={{ fontSize: 14 }}>
-                <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
+                <span style={{ color: "#C49A47", fontWeight: 700 }}>{activePlatform}</span>
                 {" · "}
                 {repo.name}
                 {" — "}
