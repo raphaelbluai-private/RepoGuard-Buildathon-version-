@@ -61,7 +61,7 @@ app.add_middleware(
 )
 
 def stamp(message: str):
-    events.append({"message": message, "time": datetime.now().strftime("%H:%M:%S")})
+    events.append({"message": message, "time": datetime.now().isoformat()})
 
 def calculate_global_compliance():
     if not repos:
@@ -124,11 +124,11 @@ def trigger():
     repos[2]["checked"] = "now"
 
     stamp("Critical breach detected in GitHub / api-service")
-    stamp("Policy drift detected in GitLab / frontend")
-    stamp("Minor config exposure detected in Bitbucket / worker-queue")
-    stamp("Enforcement triggered across all monitored sources")
-    stamp("Secrets revoked, policies corrected, and checks enforced")
-    stamp("All monitored sources returned to compliant state")
+    stamp("Auto enforcement triggered")
+    stamp("Secret revoked and credentials invalidated")
+    stamp("Pull request generated with secure patch")
+    stamp("Merge blocked until compliance restored")
+    stamp("Repository returned to compliant state")
 
     for repo in repos:
         repo["status"] = "resolved"
@@ -136,5 +136,4 @@ def trigger():
         repo["after"] = 100
 
     system_status["status"] = "resolved"
-
     return {"status": "ok"}

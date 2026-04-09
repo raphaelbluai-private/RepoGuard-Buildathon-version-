@@ -116,6 +116,95 @@ function playTing(enabled: boolean) {
   });
 }
 
+// ─── timeAgo ─────────────────────────────────────────────────────────────────
+function timeAgo(isoTime: string): string {
+  const diff = Math.floor((Date.now() - new Date(isoTime).getTime()) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  const min = Math.floor(diff / 60);
+  if (min < 60) return `${min}m ago`;
+  return `${Math.floor(min / 60)}h ago`;
+}
+
+// ─── LiveStatusDot ────────────────────────────────────────────────────────────
+function LiveStatusDot({ color }: { color: string }) {
+  return (
+    <span style={{
+      width: 9, height: 9, borderRadius: "50%", background: color,
+      display: "inline-block", flexShrink: 0,
+      animation: "statusBlink 1.8s ease-in-out infinite",
+      boxShadow: `0 0 10px ${color}`,
+    }} />
+  );
+}
+
+// ─── LivePulse ───────────────────────────────────────────────────────────────
+function LivePulse({ theme }: { theme: string }) {
+  const dark = theme === "dark";
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 8,
+      padding: "6px 12px", borderRadius: 999,
+      background: dark ? "rgba(255,255,255,0.05)" : "rgba(28,44,69,0.06)",
+      border: "1px solid rgba(196,154,71,0.22)",
+    }}>
+      <span style={{
+        width: 8, height: 8, borderRadius: "50%", background: "#6EE7B7",
+        animation: "pulseDot 1.4s ease-in-out infinite",
+      }} />
+      <span style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.72)" : "rgba(28,44,69,0.72)" }}>
+        Live scan active
+      </span>
+    </div>
+  );
+}
+
+// ─── ThreatBanner ─────────────────────────────────────────────────────────────
+function ThreatBanner({ status, theme }: { status: string; theme: string }) {
+  const dark = theme === "dark";
+  const map: Record<string, { label: string; color: string }> = {
+    secure:     { label: "Threat Level: Low",        color: "#93C5FD" },
+    monitoring: { label: "Threat Level: Low",        color: "#93C5FD" },
+    breach:     { label: "Threat Level: Critical",   color: "#FCA5A5" },
+    resolved:   { label: "Threat Level: Stabilized", color: "#6EE7B7" },
+  };
+  const item = map[status] || map.monitoring;
+  return (
+    <div style={{
+      marginBottom: 18, padding: "10px 16px", borderRadius: 14,
+      border: `1px solid ${item.color}44`,
+      background: dark ? "rgba(17,17,17,0.60)" : "rgba(255,255,255,0.88)",
+      color: item.color, fontWeight: 700, letterSpacing: "0.03em", fontSize: 13,
+      display: "flex", alignItems: "center", gap: 10,
+    }}>
+      <LiveStatusDot color={item.color} />
+      {item.label}
+    </div>
+  );
+}
+
+// ─── CommandTicker ────────────────────────────────────────────────────────────
+function CommandTicker({ theme }: { theme: string }) {
+  const dark = theme === "dark";
+  return (
+    <div style={{
+      overflow: "hidden", whiteSpace: "nowrap", borderRadius: 12,
+      border: "1px solid rgba(196,154,71,0.18)",
+      background: dark ? "rgba(17,17,17,0.6)" : "rgba(255,255,255,0.85)",
+      padding: "8px 0", marginBottom: 12,
+    }}>
+      <div style={{
+        display: "inline-block", paddingLeft: "100%",
+        animation: "tickerScroll 16s linear infinite",
+        color: dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)",
+        fontSize: 12,
+      }}>
+        Live monitoring active&nbsp;&nbsp;•&nbsp;&nbsp;Secret enforcement armed&nbsp;&nbsp;•&nbsp;&nbsp;Merge protection online&nbsp;&nbsp;•&nbsp;&nbsp;Repo integrity checks running&nbsp;&nbsp;•&nbsp;&nbsp;
+      </div>
+    </div>
+  );
+}
+
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, theme }: { status: string; theme: string }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -135,8 +224,7 @@ function StatusBadge({ status, theme }: { status: string; theme: string }) {
       border: `1px solid ${item.color}55`, color: item.color,
       fontSize: 12, whiteSpace: "nowrap", fontWeight: 600,
     }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.color,
-        flexShrink: 0, boxShadow: `0 0 8px ${item.color}99` }} />
+      <LiveStatusDot color={item.color} />
       {item.label}
     </span>
   );
@@ -189,9 +277,12 @@ function RepoRow({ repo, theme }: any) {
           {repo.issue}
         </div>
       </div>
-      <div style={{ alignSelf: "center", fontWeight: 600, fontSize: 13,
-        color: dark ? "rgba(255,255,255,0.70)" : "rgba(28,44,69,0.70)" }}>
-        {repo.before}% → {repo.after}%
+      <div style={{ alignSelf: "center", fontWeight: 700, fontSize: 13 }}>
+        <span style={{ color: repo.before < 80 ? "#FCA5A5" : repo.before < 95 ? "#FCD34D" : "#93C5FD" }}>
+          {repo.before}%
+        </span>
+        <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.35)" }}>→</span>
+        <span style={{ color: "#6EE7B7" }}>{repo.after}%</span>
       </div>
       <div style={{ textAlign: "right", alignSelf: "center" }}>
         <span style={{
@@ -517,6 +608,12 @@ export default function App() {
     }
   }, [events, settings.sound, settings.haptics]);
 
+  // Force 1-second re-renders so timeAgo labels stay fresh
+  useEffect(() => {
+    const tick = setInterval(() => setEvents((prev: any[]) => [...prev]), 1000);
+    return () => clearInterval(tick);
+  }, []);
+
   const triggerDemo = async () => {
     warmAudio();
     playClick(settings.sound);
@@ -761,7 +858,23 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100dvh", background: shellBg, color: shellText,
-      fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px" }}>
+      fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px", position: "relative" }}>
+
+      {/* Ambient background orbs */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+        <div style={{
+          position: "absolute", top: "-10%", left: "-5%",
+          width: 420, height: 420, borderRadius: "50%",
+          background: "rgba(196,154,71,0.08)", filter: "blur(80px)",
+          animation: "driftOne 12s ease-in-out infinite alternate",
+        }} />
+        <div style={{
+          position: "absolute", bottom: "-10%", right: "-5%",
+          width: 360, height: 360, borderRadius: "50%",
+          background: "rgba(30,144,255,0.08)", filter: "blur(80px)",
+          animation: "driftTwo 14s ease-in-out infinite alternate",
+        }} />
+      </div>
 
       <style>{`
         * { box-sizing: border-box; }
@@ -789,6 +902,35 @@ export default function App() {
         @keyframes popIn {
           from { opacity: 0; transform: scale(0.88); }
           to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes eventPop {
+          0%   { opacity: 0; transform: translateY(10px) scale(0.98); }
+          100% { opacity: 1; transform: translateY(0px)  scale(1); }
+        }
+        @keyframes glowFade {
+          0%   { box-shadow: 0 0 20px rgba(196,154,71,0.35); }
+          100% { box-shadow: 0 0 0   rgba(196,154,71,0); }
+        }
+        @keyframes pulseDot {
+          0%   { transform: scale(1);    opacity: 0.85; box-shadow: 0 0 0 0   rgba(110,231,183,0.45); }
+          70%  { transform: scale(1.05); opacity: 1;    box-shadow: 0 0 0 10px rgba(110,231,183,0); }
+          100% { transform: scale(1);    opacity: 0.85; box-shadow: 0 0 0 0   rgba(110,231,183,0); }
+        }
+        @keyframes statusBlink {
+          0%, 100% { opacity: 0.7; transform: scale(1); }
+          50%       { opacity: 1;   transform: scale(1.12); }
+        }
+        @keyframes tickerScroll {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-100%); }
+        }
+        @keyframes driftOne {
+          from { transform: translate(0, 0); }
+          to   { transform: translate(40px, 20px); }
+        }
+        @keyframes driftTwo {
+          from { transform: translate(0, 0); }
+          to   { transform: translate(-30px, -20px); }
         }
 
         .rg-wrap {
@@ -879,6 +1021,9 @@ export default function App() {
           </div>
         </div>
 
+        {/* Threat level banner */}
+        <ThreatBanner status={status} theme={theme} />
+
         {/* Nav tabs */}
         <div className="nav-row">
           {pages.map((p, i) => (
@@ -896,19 +1041,27 @@ export default function App() {
           {/* Live Event Feed */}
           <div style={{ background: cardBg, border: cardBorder, borderRadius: 18,
             padding: "16px", height: "fit-content" }}>
-            <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 14, marginBottom: 12 }}>
-              Live Event Feed
+            <div style={{ display: "flex", justifyContent: "space-between",
+              alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+              <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 14 }}>
+                Live Event Feed
+              </div>
+              <LivePulse theme={theme} />
             </div>
+            <CommandTicker theme={theme} />
             <div style={{ display: "grid", gap: 8 }}>
-              {events.map((ev, i) => (
-                <div key={`${ev.message}-${i}`} style={{
+              {events.map((event, i) => (
+                <div key={`${event.message}-${i}`} style={{
                   background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-                  border: dark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(28,44,69,0.07)",
-                  borderRadius: 10, padding: "10px 12px",
-                  animation: "fadeSlide 220ms ease",
+                  border: dark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(28,44,69,0.08)",
+                  borderRadius: 14, padding: "12px 14px",
+                  animation: "eventPop 200ms ease, glowFade 1s ease",
+                  boxShadow: "0 0 0 rgba(196,154,71,0)",
                 }}>
-                  <div style={{ fontSize: 13, lineHeight: 1.4 }}>{ev.message}</div>
-                  <div style={{ marginTop: 3, fontSize: 11, color: subText }}>{ev.time}</div>
+                  <div style={{ fontSize: 14 }}>{event.message}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: subText }}>
+                    {timeAgo(event.time)}
+                  </div>
                 </div>
               ))}
               {events.length === 0 && (
