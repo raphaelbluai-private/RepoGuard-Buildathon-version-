@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySourcePicker";
 import { useIsMobile } from "./hooks/use-mobile";
+import WarRoomFeed from "./components/WarRoomFeed";
 
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
@@ -128,7 +129,29 @@ function timeAgo(isoTime: string): string {
 }
 
 // ─── LiveStatusDot ────────────────────────────────────────────────────────────
-function LiveStatusDot({ color }: { color: string }) {
+function LiveStatusDot({ color, variant = "blink" }: { color: string; variant?: "blink" | "pulse" | "ping" }) {
+  if (variant === "ping") {
+    return (
+      <span style={{ position: "relative", display: "inline-flex", alignItems: "center",
+        justifyContent: "center", width: 9, height: 9, flexShrink: 0 }}>
+        <span className="animate-ping" style={{
+          position: "absolute", width: "100%", height: "100%",
+          borderRadius: "50%", background: color, opacity: 0.6,
+        }} />
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: color,
+          boxShadow: `0 0 8px ${color}`, position: "relative" }} />
+      </span>
+    );
+  }
+  if (variant === "pulse") {
+    return (
+      <span className="animate-pulse" style={{
+        width: 9, height: 9, borderRadius: "50%", background: color,
+        display: "inline-block", flexShrink: 0,
+        boxShadow: `0 0 10px ${color}`,
+      }} />
+    );
+  }
   return (
     <span style={{
       width: 9, height: 9, borderRadius: "50%", background: color,
@@ -209,13 +232,13 @@ function CommandTicker({ theme }: { theme: string }) {
 
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, theme }: { status: string; theme: string }) {
-  const map: Record<string, { label: string; color: string }> = {
-    secure:     { label: "Secure",          color: "#6EE7B7" },
-    monitoring: { label: "Monitoring",      color: "#93C5FD" },
-    warning:    { label: "Warning",         color: "#FCD34D" },
-    breach:     { label: "Breach Detected", color: "#FCA5A5" },
-    correcting: { label: "Correcting",      color: "#FCD34D" },
-    resolved:   { label: "Resolved",        color: "#6EE7B7" },
+  const map: Record<string, { label: string; color: string; variant: "blink" | "pulse" | "ping" }> = {
+    secure:     { label: "Secure",          color: "#6EE7B7", variant: "pulse" },
+    monitoring: { label: "Monitoring",      color: "#93C5FD", variant: "pulse" },
+    warning:    { label: "Warning",         color: "#FCD34D", variant: "ping"  },
+    breach:     { label: "Breach Detected", color: "#FCA5A5", variant: "ping"  },
+    correcting: { label: "Correcting",      color: "#FCD34D", variant: "pulse" },
+    resolved:   { label: "Resolved",        color: "#6EE7B7", variant: "pulse" },
   };
   const item = map[status] || map.monitoring;
   return (
@@ -226,7 +249,7 @@ function StatusBadge({ status, theme }: { status: string; theme: string }) {
       border: `1px solid ${item.color}55`, color: item.color,
       fontSize: 12, whiteSpace: "nowrap", fontWeight: 600,
     }}>
-      <LiveStatusDot color={item.color} />
+      <LiveStatusDot color={item.color} variant={item.variant} />
       {item.label}
     </span>
   );
@@ -1138,37 +1161,8 @@ export default function App() {
         <div className="main-grid">
           <div>{pageContent[page]}</div>
 
-          {/* Live Event Feed */}
-          <div style={{ background: cardBg, border: cardBorder, borderRadius: 18,
-            padding: "16px", height: "fit-content" }}>
-            <div style={{ display: "flex", justifyContent: "space-between",
-              alignItems: "center", marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
-              <div style={{ color: "#C49A47", fontWeight: 700, fontSize: 14 }}>
-                Live Event Feed
-              </div>
-              <LivePulse theme={theme} />
-            </div>
-            <CommandTicker theme={theme} />
-            <div className="event-scroll" style={{ display: "grid", gap: 8 }}>
-              {events.map((event, i) => (
-                <div key={`${event.message}-${i}`} style={{
-                  background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-                  border: dark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(28,44,69,0.08)",
-                  borderRadius: 14, padding: "12px 14px",
-                  animation: "eventPop 200ms ease, glowFade 1s ease",
-                  boxShadow: "0 0 0 rgba(196,154,71,0)",
-                }}>
-                  <div style={{ fontSize: 14 }}>{event.message}</div>
-                  <div style={{ marginTop: 4, fontSize: 12, color: subText }}>
-                    {timeAgo(event.time)}
-                  </div>
-                </div>
-              ))}
-              {events.length === 0 && (
-                <div style={{ color: subText, fontSize: 13 }}>No active events.</div>
-              )}
-            </div>
-          </div>
+          {/* War Room Feed */}
+          <WarRoomFeed theme={theme} />
         </div>
 
       </div>
