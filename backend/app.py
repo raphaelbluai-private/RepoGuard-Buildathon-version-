@@ -13,7 +13,7 @@ repos = [
         "id": "1",
         "source": "GitHub",
         "name": "api-service",
-        "issue": "No active issue",
+        "issue": "Monitoring active",
         "severity": "none",
         "status": "secure",
         "before": 72,
@@ -24,7 +24,7 @@ repos = [
         "id": "2",
         "source": "GitLab",
         "name": "frontend",
-        "issue": "No active issue",
+        "issue": "Monitoring active",
         "severity": "none",
         "status": "secure",
         "before": 88,
@@ -35,7 +35,7 @@ repos = [
         "id": "3",
         "source": "Bitbucket",
         "name": "worker-queue",
-        "issue": "No active issue",
+        "issue": "Monitoring active",
         "severity": "none",
         "status": "secure",
         "before": 94,
@@ -99,6 +99,7 @@ def verify_code(body: VerifyBody):
 
 @app.post("/api/demo-trigger")
 def trigger():
+    """Phase 1 — expose the breach. Repos stay in breach state until /api/demo-resolve."""
     events.clear()
     system_status["status"] = "breach"
 
@@ -107,33 +108,37 @@ def trigger():
     repos[0]["status"] = "breach"
     repos[0]["before"] = 72
     repos[0]["after"] = 72
-    repos[0]["checked"] = "now"
 
     repos[1]["issue"] = "Policy drift detected"
     repos[1]["severity"] = "warning"
     repos[1]["status"] = "warning"
     repos[1]["before"] = 88
     repos[1]["after"] = 88
-    repos[1]["checked"] = "now"
 
     repos[2]["issue"] = "Minor config exposure"
     repos[2]["severity"] = "minor"
     repos[2]["status"] = "monitoring"
     repos[2]["before"] = 94
     repos[2]["after"] = 94
-    repos[2]["checked"] = "now"
 
     stamp("Critical breach detected in GitHub / api-service")
     stamp("Auto enforcement triggered")
     stamp("Secret revoked and credentials invalidated")
     stamp("Pull request generated with secure patch")
     stamp("Merge blocked until compliance restored")
-    stamp("Repository returned to compliant state")
 
+    return {"status": "ok"}
+
+@app.post("/api/demo-resolve")
+def resolve():
+    """Phase 2 — apply all corrections and mark everything resolved."""
     for repo in repos:
         repo["status"] = "resolved"
         repo["issue"] = "Repository returned to compliance"
+        repo["severity"] = "none"
         repo["after"] = 100
 
     system_status["status"] = "resolved"
+    stamp("Repository returned to compliant state")
+
     return {"status": "ok"}

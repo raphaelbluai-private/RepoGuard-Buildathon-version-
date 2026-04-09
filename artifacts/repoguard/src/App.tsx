@@ -164,10 +164,11 @@ function LivePulse({ theme }: { theme: string }) {
 function ThreatBanner({ status, theme }: { status: string; theme: string }) {
   const dark = theme === "dark";
   const map: Record<string, { label: string; color: string }> = {
-    secure:     { label: "Threat Level: Low",        color: "#93C5FD" },
-    monitoring: { label: "Threat Level: Low",        color: "#93C5FD" },
-    breach:     { label: "Threat Level: Critical",   color: "#FCA5A5" },
-    resolved:   { label: "Threat Level: Stabilized", color: "#6EE7B7" },
+    secure:     { label: "Threat Level: Low",              color: "#93C5FD" },
+    monitoring: { label: "Threat Level: Low",              color: "#93C5FD" },
+    breach:     { label: "Threat Level: Critical",         color: "#FCA5A5" },
+    correcting: { label: "Threat Level: Correcting",       color: "#FCD34D" },
+    resolved:   { label: "Threat Level: Stabilized",       color: "#6EE7B7" },
   };
   const item = map[status] || map.monitoring;
   return (
@@ -660,25 +661,28 @@ export default function App() {
     playClick(settings.sound);
     haptic(settings.haptics, 18);
 
+    // Phase 1 — set breach in backend, jump to Breach page
     await fetch("/api/demo-trigger", { method: "POST" });
-    playSwoosh(settings.sound);
-    refreshState();
-
+    await refreshState();
     setPage("Breach");
     playAlert(settings.sound);
     haptic(settings.haptics, [30, 20, 30, 20, 30]);
 
+    // Phase 2 — Correction page after 4 s
     setTimeout(() => {
       setPage("Correction");
       playSwoosh(settings.sound);
       haptic(settings.haptics, 18);
-    }, 800);
+    }, 4000);
 
-    setTimeout(() => {
+    // Phase 3 — Resolve backend, jump to Resolution page after 8 s
+    setTimeout(async () => {
+      await fetch("/api/demo-resolve", { method: "POST" });
+      await refreshState();
       setPage("Resolution");
       playTing(settings.sound);
       haptic(settings.haptics, [10, 30, 10]);
-    }, 1600);
+    }, 8000);
   };
 
   const goPage = (nextPage: string) => {
@@ -686,6 +690,13 @@ export default function App() {
     playSwoosh(settings.sound);
     haptic(settings.haptics, 10);
   };
+
+  // ── Page-driven threat display — overrides backend status for non-Command pages ──
+  const displayStatus =
+    page === "Breach"     ? "breach"     :
+    page === "Correction" ? "correcting" :
+    page === "Resolution" ? "resolved"   :
+    status; // Command page reads live backend status
 
   // ── Derived: filter repos by selected platform (must be before early return) ──
   const activePlatforms: string[] = settings.repoTargets?.length ? settings.repoTargets : ["GitHub"];
@@ -1111,7 +1122,7 @@ export default function App() {
         </div>
 
         {/* Threat level banner */}
-        <ThreatBanner status={status} theme={theme} />
+        <ThreatBanner status={displayStatus} theme={theme} />
 
         {/* Nav tabs */}
         <div className="nav-row">
