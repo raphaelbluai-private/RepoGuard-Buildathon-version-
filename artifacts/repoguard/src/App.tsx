@@ -912,22 +912,28 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-            {displayedRepos.length === 0
-              ? <div style={{ textAlign: "center", color: subText, fontSize: 13, padding: "10px 0" }}>
-                  No repositories connected for the selected sources.
-                </div>
-              : displayedRepos.map((repo: any) => (
-                <div key={repo.id} style={{ fontSize: 14 }}>
-                  <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
-                  {" · "}
-                  {repo.name}
-                  {" — "}
-                  <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
-                    {repo.before}% → {repo.after}%
-                  </span>
-                </div>
-              ))
-            }
+            {activePlatforms.map((platform: string) => {
+              const platformRepos = repos.filter((r: any) => r.source === platform);
+              return platformRepos.length > 0
+                ? platformRepos.map((repo: any) => (
+                    <div key={repo.id} style={{ fontSize: 14 }}>
+                      <span style={{ color: "#C49A47", fontWeight: 700 }}>{repo.source}</span>
+                      {" · "}
+                      {repo.name}
+                      {" — "}
+                      <span style={{ color: "#6EE7B7", fontWeight: 700 }}>
+                        {repo.before}% → {repo.after}%
+                      </span>
+                    </div>
+                  ))
+                : (
+                    <div key={platform} style={{ fontSize: 14 }}>
+                      <span style={{ color: "#C49A47", fontWeight: 700 }}>{platform}</span>
+                      {" · "}
+                      <span style={{ color: subText }}>All clear — no incidents</span>
+                    </div>
+                  );
+            })}
           </div>
         </div>
       </Panel>
