@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySourcePicker";
+import { useIsMobile } from "./hooks/use-mobile";
 
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
@@ -142,7 +143,7 @@ function LiveStatusDot({ color }: { color: string }) {
 function LivePulse({ theme }: { theme: string }) {
   const dark = theme === "dark";
   return (
-    <div style={{
+    <div className="live-pulse" style={{
       display: "inline-flex", alignItems: "center", gap: 8,
       padding: "6px 12px", borderRadius: 999,
       background: dark ? "rgba(255,255,255,0.05)" : "rgba(28,44,69,0.06)",
@@ -187,7 +188,7 @@ function ThreatBanner({ status, theme }: { status: string; theme: string }) {
 function CommandTicker({ theme }: { theme: string }) {
   const dark = theme === "dark";
   return (
-    <div style={{
+    <div className="cmd-ticker" style={{
       overflow: "hidden", whiteSpace: "nowrap", borderRadius: 12,
       border: "1px solid rgba(196,154,71,0.18)",
       background: dark ? "rgba(17,17,17,0.6)" : "rgba(255,255,255,0.85)",
@@ -252,6 +253,7 @@ function MetricCard({ title, value, subvalue, theme }: any) {
 // ─── RepoRow ─────────────────────────────────────────────────────────────────
 function RepoRow({ repo, theme }: any) {
   const dark = theme === "dark";
+  const isMobile = useIsMobile();
   const severityMap: Record<string, { label: string; color: string }> = {
     critical: { label: "Critical", color: "#FCA5A5" },
     warning:  { label: "Warning",  color: "#FCD34D" },
@@ -260,43 +262,73 @@ function RepoRow({ repo, theme }: any) {
     secure:   { label: "Secure",   color: "#6EE7B7" },
   };
   const sev = severityMap[repo.severity] || severityMap.none;
+  const label = repo.status === "resolved" ? "Resolved" : sev.label;
+
+  const ComplianceBlock = () => (
+    <div style={{ fontWeight: 700, fontSize: 13 }}>
+      <span style={{ color: repo.before < 80 ? "#FCA5A5" : repo.before < 95 ? "#FCD34D" : "#93C5FD" }}>
+        {repo.before}%
+      </span>
+      <span style={{ margin: "0 5px", color: dark ? "rgba(255,255,255,0.35)" : "rgba(28,44,69,0.30)" }}>→</span>
+      <span style={{ color: "#6EE7B7" }}>{repo.after}%</span>
+    </div>
+  );
+
+  const BadgeBlock = () => (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 7,
+      padding: "5px 10px", borderRadius: 999,
+      background: dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
+      border: `1px solid ${sev.color}55`, color: sev.color,
+      fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+    }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: sev.color,
+        flexShrink: 0, boxShadow: `0 0 8px ${sev.color}88` }} />
+      {label}
+    </span>
+  );
+
   return (
     <div style={{
-      display: "grid", gridTemplateColumns: "1.5fr 1fr auto", gap: 12,
-      padding: "14px 16px",
+      padding: "12px 14px",
       background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-      borderRadius: 14, border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
+      borderRadius: 14,
+      border: dark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(28,44,69,0.08)",
       marginBottom: 10,
     }}>
-      <div>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>
-          <span style={{ color: "#C49A47" }}>{repo.source}</span>
-          {repo.source ? " · " : ""}{repo.name}
+      {/* Top row: name + (desktop: compliance + badge inline) */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr auto",
+        gap: isMobile ? 0 : 12,
+        alignItems: "center",
+      }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>
+            <span style={{ color: "#C49A47" }}>{repo.source}</span>
+            {repo.source ? " · " : ""}{repo.name}
+          </div>
+          <div style={{ color: dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)", fontSize: 12, marginTop: 2 }}>
+            {repo.issue}
+          </div>
         </div>
-        <div style={{ color: dark ? "rgba(255,255,255,0.72)" : "rgba(28,44,69,0.72)", fontSize: 12, marginTop: 3 }}>
-          {repo.issue}
+        {!isMobile && <ComplianceBlock />}
+        {!isMobile && (
+          <div style={{ textAlign: "right" }}>
+            <BadgeBlock />
+          </div>
+        )}
+      </div>
+
+      {/* Mobile second row: compliance left, badge right */}
+      {isMobile && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginTop: 10, paddingTop: 8,
+          borderTop: dark ? "1px solid rgba(255,255,255,0.05)" : "1px solid rgba(28,44,69,0.07)" }}>
+          <ComplianceBlock />
+          <BadgeBlock />
         </div>
-      </div>
-      <div style={{ alignSelf: "center", fontWeight: 700, fontSize: 13 }}>
-        <span style={{ color: repo.before < 80 ? "#FCA5A5" : repo.before < 95 ? "#FCD34D" : "#93C5FD" }}>
-          {repo.before}%
-        </span>
-        <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.35)" }}>→</span>
-        <span style={{ color: "#6EE7B7" }}>{repo.after}%</span>
-      </div>
-      <div style={{ textAlign: "right", alignSelf: "center" }}>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          padding: "6px 12px", borderRadius: 999,
-          background: dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
-          border: `1px solid ${sev.color}55`, color: sev.color,
-          fontSize: 13, fontWeight: 600,
-        }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: sev.color,
-            flexShrink: 0, boxShadow: `0 0 10px ${sev.color}88` }} />
-          {repo.status === "resolved" ? "Resolved" : sev.label}
-        </span>
-      </div>
+      )}
     </div>
   );
 }
@@ -986,11 +1018,16 @@ export default function App() {
           box-shadow: 0 4px 16px rgba(196,154,71,0.28);
         }
 
+        .rg-wrap { position: relative; z-index: 1; }
+
         @media (max-width: 820px) {
           .main-grid { grid-template-columns: 1fr; }
         }
-        @media (max-width: 640px) {
-          .rg-wrap { padding: 12px 12px 0; }
+        @media (max-width: 767px) {
+          .cmd-ticker   { display: none; }
+          .event-scroll { max-height: 340px; overflow-y: auto; }
+          .live-pulse   { display: none; }
+          .rg-wrap      { padding: 12px 12px 0; }
           .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
         }
         @media (max-width: 400px) {
@@ -1049,7 +1086,7 @@ export default function App() {
               <LivePulse theme={theme} />
             </div>
             <CommandTicker theme={theme} />
-            <div style={{ display: "grid", gap: 8 }}>
+            <div className="event-scroll" style={{ display: "grid", gap: 8 }}>
               {events.map((event, i) => (
                 <div key={`${event.message}-${i}`} style={{
                   background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
