@@ -59,9 +59,9 @@ function FeedItem({ event }: { event: FeedEvent }) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${dotClass}`} />
-          <span className="text-sm text-white/90 truncate">{event.message}</span>
+          <span className="text-sm text-neutral-800 truncate">{event.message}</span>
         </div>
-        <span className="text-xs text-white/45 flex-shrink-0">{getElapsed(elapsed)}</span>
+        <span className="text-xs text-neutral-500 flex-shrink-0">{elapsed}s ago</span>
       </div>
     </div>
   );
