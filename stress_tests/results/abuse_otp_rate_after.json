@@ -1,0 +1,1 @@
+{"active_lockout_keys":{"auth_lock:victim@staging.test":159.3,"auth_verify:ip:127.0.0.1":159.4,"otp_req:email:victim@staging.test":240.2,"otp_req:ip:127.0.0.1":240.2},"active_lockout_count":4,"tracked_email_failures":{"victim@staging.test":0},"tracked_rate_windows":3}
