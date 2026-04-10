@@ -34,7 +34,7 @@ export function getElapsed(seconds: number): string {
 }
 
 // ─── Individual feed item ─────────────────────────────────────────────────────
-function FeedItem({ event }: { event: FeedEvent }) {
+function FeedItem({ event, dark }: { event: FeedEvent; dark: boolean }) {
   const [elapsed, setElapsed] = useState(
     Math.floor((Date.now() - event.timestamp) / 1000)
   );
@@ -50,18 +50,35 @@ function FeedItem({ event }: { event: FeedEvent }) {
     event.type === "critical"
       ? "bg-red-400 animate-threat-pulse"
       : event.type === "warning"
-      ? "bg-yellow-300 animate-pulse"
+      ? "bg-yellow-400 animate-pulse"
       : "bg-blue-300 animate-pulse";
 
+  const msgColor = dark
+    ? "rgba(255,255,255,0.82)"
+    : "rgba(20,34,55,0.88)";
+
+  const timeColor = dark
+    ? "rgba(255,255,255,0.38)"
+    : "rgba(20,34,55,0.45)";
+
   return (
-    <div className="animate-fade-rise rounded-xl border border-white/10 bg-white/5 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.16)] backdrop-blur-sm"
-      style={{ flexShrink: 0 }}>
+    <div
+      className="animate-fade-rise rounded-xl px-4 py-3"
+      style={{
+        flexShrink: 0,
+        background: dark ? "rgba(255,255,255,0.05)" : "rgba(20,34,55,0.06)",
+        border: dark ? "1px solid rgba(255,255,255,0.09)" : "1px solid rgba(20,34,55,0.10)",
+        backdropFilter: "blur(4px)",
+      }}
+    >
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${dotClass}`} />
-          <span className="text-sm text-neutral-800 truncate">{event.message}</span>
+          <span style={{ fontSize: 13, color: msgColor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {event.message}
+          </span>
         </div>
-        <span className="text-xs text-neutral-500 flex-shrink-0">{elapsed}s ago</span>
+        <span style={{ fontSize: 11, color: timeColor, flexShrink: 0 }}>{elapsed}s ago</span>
       </div>
     </div>
   );
@@ -163,7 +180,7 @@ export default function WarRoomFeed({ theme }: { theme: string }) {
             }}
           >
             {[...events, ...events].map((event, i) => (
-              <FeedItem key={`${event.id}-${i}`} event={event} />
+              <FeedItem key={`${event.id}-${i}`} event={event} dark={dark} />
             ))}
             {events.length === 0 && (
               <div className="text-xs pt-1" style={{

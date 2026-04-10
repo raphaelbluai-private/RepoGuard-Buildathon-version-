@@ -97,8 +97,8 @@ export function RepoGuardCore({
         } as React.CSSProperties}>
           {showImage ? (
             <img
-              src="/rg-core.jpeg"
-              alt="REPOGUARD core"
+              src="/rg-shield.png"
+              alt="REPOGUARD"
               style={{
                 width: imgDim,
                 height: imgDim,
@@ -109,11 +109,15 @@ export function RepoGuardCore({
                   : status === "locked"
                   ? "hue-rotate(180deg) saturate(1.2)"
                   : "none",
-                opacity: 0.92,
+                opacity: 0.95,
               }}
             />
           ) : (
-            <span style={{ fontSize: imgDim * 0.55, lineHeight: 1 }}>🔒</span>
+            <img
+              src="/rg-shield.png"
+              alt="REPOGUARD"
+              style={{ width: imgDim, height: imgDim, objectFit: "cover", borderRadius: "50%", opacity: 0.95 }}
+            />
           )}
         </div>
 

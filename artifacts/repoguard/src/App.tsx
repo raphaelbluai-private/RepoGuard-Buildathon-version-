@@ -185,7 +185,8 @@ function LivePulse({ theme }: { theme: string }) {
 }
 
 // ─── ThreatBadge ──────────────────────────────────────────────────────────────
-function ThreatBadge({ status }: { status: string }) {
+function ThreatBadge({ status, theme }: { status: string; theme?: string }) {
+  const dark = theme !== "light";
   const levelMap: Record<string, "low" | "warning" | "critical" | "stabilized"> = {
     secure:     "low",
     monitoring: "low",
@@ -196,13 +197,21 @@ function ThreatBadge({ status }: { status: string }) {
   };
   const level = levelMap[status] ?? "low";
 
-  const styles: Record<string, string> = {
+  const darkStyles: Record<string, string> = {
     low:        "bg-blue-500/10 text-blue-300 border-blue-400/30",
     warning:    "bg-yellow-500/10 text-yellow-300 border-yellow-400/30",
     critical:   "bg-red-500/10 text-red-300 border-red-400/30",
     stabilized: "bg-emerald-500/10 text-emerald-300 border-emerald-400/30",
   };
 
+  const lightStyles: Record<string, string> = {
+    low:        "bg-blue-100 text-blue-800 border-blue-400/50",
+    warning:    "bg-yellow-100 text-yellow-800 border-yellow-500/50",
+    critical:   "bg-red-100 text-red-800 border-red-400/50",
+    stabilized: "bg-emerald-100 text-emerald-800 border-emerald-500/50",
+  };
+
+  const styles = dark ? darkStyles : lightStyles;
   const dotClass = level === "critical" ? "animate-threat-pulse" : "animate-pulse";
 
   const label = {
@@ -244,24 +253,29 @@ function CommandTicker({ theme }: { theme: string }) {
 
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, theme }: { status: string; theme: string }) {
-  const map: Record<string, { label: string; color: string; variant: "blink" | "pulse" | "ping" }> = {
-    secure:     { label: "Secure",          color: "#6EE7B7", variant: "pulse" },
-    monitoring: { label: "Monitoring",      color: "#93C5FD", variant: "pulse" },
-    warning:    { label: "Warning",         color: "#FCD34D", variant: "ping"  },
-    breach:     { label: "Breach Detected", color: "#FCA5A5", variant: "ping"  },
-    correcting: { label: "Correcting",      color: "#FCD34D", variant: "pulse" },
-    resolved:   { label: "Resolved",        color: "#6EE7B7", variant: "pulse" },
+  const dark = theme !== "light";
+
+  type Entry = { label: string; darkColor: string; lightColor: string; variant: "blink" | "pulse" | "ping" };
+  const map: Record<string, Entry> = {
+    secure:     { label: "Secure",          darkColor: "#6EE7B7", lightColor: "#065f46", variant: "pulse" },
+    monitoring: { label: "Monitoring",      darkColor: "#93C5FD", lightColor: "#1e40af", variant: "pulse" },
+    warning:    { label: "Warning",         darkColor: "#FCD34D", lightColor: "#92400e", variant: "ping"  },
+    breach:     { label: "Breach Detected", darkColor: "#FCA5A5", lightColor: "#991b1b", variant: "ping"  },
+    correcting: { label: "Correcting",      darkColor: "#FCD34D", lightColor: "#92400e", variant: "pulse" },
+    resolved:   { label: "Resolved",        darkColor: "#6EE7B7", lightColor: "#065f46", variant: "pulse" },
   };
   const item = map[status] || map.monitoring;
+  const color = dark ? item.darkColor : item.lightColor;
+
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 6,
       padding: "5px 10px", borderRadius: 999,
-      background: theme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.05)",
-      border: `1px solid ${item.color}55`, color: item.color,
+      background: dark ? "rgba(255,255,255,0.06)" : `${color}18`,
+      border: `1px solid ${color}55`, color,
       fontSize: 12, whiteSpace: "nowrap", fontWeight: 600,
     }}>
-      <LiveStatusDot color={item.color} variant={item.variant} />
+      <LiveStatusDot color={color} variant={item.variant} />
       {item.label}
     </span>
   );
@@ -1117,7 +1131,7 @@ export default function App() {
   const dark = theme === "dark";
   const shellBg = dark
     ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)"
-    : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
+    : "linear-gradient(180deg,#DDD0B8 0%,#C9BB9E 100%)";
   const shellText = dark ? "white" : "#1C2C45";
   const cardBg = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
@@ -1540,7 +1554,7 @@ export default function App() {
             <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
               RepoGuard
             </div>
-            <ThreatBadge status={displayStatus} />
+            <ThreatBadge status={displayStatus} theme={theme} />
             <LivePulse theme={theme} />
           </div>
 
