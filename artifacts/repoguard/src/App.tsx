@@ -478,44 +478,64 @@ function SettingsModal({ open, onClose, settings, setSettings, theme, repos, onS
 }
 
 // ─── AuthScreen ───────────────────────────────────────────────────────────────
-function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
+type BootPhase = "booting" | "verifying" | "secure" | "handoff" | "login";
+
+const BOOT_LINES = [
+  "Initializing secure execution layer...",
+  "Validating runtime integrity...",
+  "Verifying authorization chain...",
+  "Loading protected interface...",
+];
+
+function AuthScreen({ sound, haptics, onAuthenticated }: any) {
   const [email, setEmail] = useState("demo@repoguard.ai");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
   const [demoCode, setDemoCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [bootStatus, setBootStatus] = useState<RGStatus>("verifying");
-  const [bootMessage, setBootMessage] = useState("Running policy checks…");
+  const [bootPhase, setBootPhase] = useState<BootPhase>("booting");
+  const [bootLineIdx, setBootLineIdx] = useState(0);
 
+  // ── Boot state machine ──────────────────────────────────────────────────────
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/repoguard/verify");
-        if (!cancelled) {
-          const data = await res.json();
-          const mapped: RGStatus = data.status === "secure" ? "secure" : "locked";
-          setBootStatus(mapped);
-          setBootMessage(data.message ?? "");
-        }
-      } catch {
-        if (!cancelled) {
-          setBootStatus("locked");
-          setBootMessage("Verification service unavailable");
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-  const dark = theme === "dark";
-  const bg = dark ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)" : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
-  const text = dark ? "#fff" : "#1C2C45";
-  const cardBg = dark ? "rgba(10,10,10,0.82)" : "rgba(255,255,255,0.96)";
-  const border = dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.12)";
-  const inputBg = dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.04)";
-  const sub = dark ? "rgba(255,255,255,0.50)" : "rgba(28,44,69,0.50)";
+    let alive = true;
+    const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
+    (async () => {
+      // booting → verifying
+      await wait(500);
+      if (!alive) return;
+      setBootPhase("verifying");
+
+      // Run API verify in background; guarantee at least 2200ms in verifying
+      fetch("/api/repoguard/verify").catch(() => null);
+      await wait(2200);
+      if (!alive) return;
+      setBootPhase("secure");
+
+      // Show secure confirmation briefly
+      await wait(1000);
+      if (!alive) return;
+      setBootPhase("handoff");
+
+      // Handoff animation plays out
+      await wait(650);
+      if (!alive) return;
+      setBootPhase("login");
+    })();
+
+    return () => { alive = false; };
+  }, []);
+
+  // ── Rotate boot messages while verifying ───────────────────────────────────
+  useEffect(() => {
+    if (bootPhase !== "verifying") return;
+    const t = setInterval(() => setBootLineIdx(i => (i + 1) % BOOT_LINES.length), 1400);
+    return () => clearInterval(t);
+  }, [bootPhase]);
+
+  // ── Auth logic (unchanged) ─────────────────────────────────────────────────
   const sendCode = async () => {
     if (!email.trim()) return;
     warmAudio();
@@ -560,103 +580,408 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
     } finally { setLoading(false); }
   };
 
+  // ── Shared styles ──────────────────────────────────────────────────────────
+  const BG = "linear-gradient(180deg, #040c14 0%, #030810 100%)";
+  const sub = "rgba(255,255,255,0.45)";
+
   const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "13px 14px", borderRadius: 12,
-    background: inputBg, border: `1px solid ${border}`,
-    color: text, fontSize: 15, outline: "none", boxSizing: "border-box",
-    fontFamily: "inherit",
+    width: "100%", padding: "13px 16px", borderRadius: 12,
+    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(30,144,255,0.22)",
+    color: "#fff", fontSize: 15, outline: "none", boxSizing: "border-box",
+    fontFamily: "inherit", transition: "border-color 0.2s",
   };
 
   const btnStyle: React.CSSProperties = {
-    width: "100%", padding: "14px", borderRadius: 12,
-    background: "#C49A47", color: "#111",
-    border: "none", fontWeight: 800, fontSize: 15,
+    width: "100%", padding: "15px", borderRadius: 12,
+    background: "linear-gradient(135deg, #C49A47 0%, #a87d2e 100%)",
+    color: "#0a0a0a", border: "none", fontWeight: 800, fontSize: 15,
     cursor: loading ? "not-allowed" : "pointer",
     opacity: loading ? 0.7 : 1, fontFamily: "inherit",
+    boxShadow: "0 4px 24px rgba(196,154,71,0.35)",
+    letterSpacing: "0.02em",
   };
 
+  // ── Ring dimensions (responsive) ──────────────────────────────────────────
+  const RING = 220;
+  const HALF = RING / 2;
+
+  // ── RENDER ─────────────────────────────────────────────────────────────────
+  const showBoot = bootPhase !== "login";
+  const isHandoff = bootPhase === "handoff";
+  const isSecure = bootPhase === "secure";
+  const isVerifying = bootPhase === "verifying";
+
   return (
-    <div style={{ minHeight: "100dvh", background: bg, display: "grid",
-      placeItems: "center", padding: "20px 16px",
-      fontFamily: "Inter, system-ui, sans-serif", position: "relative", overflow: "hidden" }}>
+    <div style={{ fontFamily: "Inter, system-ui, sans-serif", minHeight: "100dvh", background: BG }}>
 
-      {/* Ghost background logo */}
-      <img src="/rg-ghost.jpeg" alt="" aria-hidden="true" style={{
-        position: "absolute", inset: 0, width: "100%", height: "100%",
-        objectFit: "cover", opacity: 0.06, filter: "blur(8px)", pointerEvents: "none",
-        transform: "scale(1.1)",
-      }} />
+      {/* ── BOOT SCREEN ─────────────────────────────────────────────────── */}
+      {showBoot && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 60,
+          background: BG,
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          overflow: "hidden",
+          animation: isHandoff
+            ? "rgBootOut 0.65s ease-in-out forwards"
+            : "rgBootIn 0.6s ease-out",
+        }}>
 
-      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 420,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+          {/* Ghost watermark */}
+          <img src="/rg-ghost.jpeg" alt="" aria-hidden="true" style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%",
+            objectFit: "cover", opacity: 0.04, filter: "blur(10px)",
+            transform: "scale(1.1)", pointerEvents: "none",
+          }} />
 
-        <RepoGuardCore status={bootStatus} size="md" showLabel={true} showImage={true} />
+          {/* Ambient radial glow */}
+          <div style={{
+            position: "absolute",
+            top: "38%", left: "50%",
+            width: 480, height: 480,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(30,144,255,0.20) 0%, rgba(30,144,255,0.07) 45%, transparent 70%)",
+            pointerEvents: "none",
+            animation: "rgAmbientGlow 4.5s ease-in-out infinite",
+            transform: "translate(-50%, -50%)",
+          }} />
 
-        <div style={{ width: "100%", background: cardBg, color: text,
-          borderRadius: 20, padding: "28px 24px",
-          border: `1px solid ${border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
+          {/* Ring + emblem assembly */}
+          <div style={{ position: "relative", width: RING, height: RING, marginBottom: 44, flexShrink: 0 }}>
 
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ color: "#C49A47", fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>RepoGuard</div>
-            <div style={{ color: sub, marginTop: 5, fontSize: 14 }}>Secure sign in with email and 2FA.</div>
+            {/* Outer segmented ring — CW */}
+            <svg
+              viewBox={`0 0 ${RING} ${RING}`}
+              width={RING} height={RING}
+              style={{ position: "absolute", inset: 0, animation: "rgSpin 11s linear infinite" }}
+            >
+              <circle
+                cx={HALF} cy={HALF} r={HALF - 4}
+                fill="none" stroke="#1E90FF" strokeWidth="1.5"
+                strokeDasharray="16 9" opacity="0.75"
+              />
+            </svg>
+
+            {/* Mid segmented ring — CCW */}
+            <svg
+              viewBox={`0 0 ${RING} ${RING}`}
+              width={RING} height={RING}
+              style={{ position: "absolute", inset: 0, animation: "rgSpin 17s linear infinite reverse" }}
+            >
+              <circle
+                cx={HALF} cy={HALF} r={HALF - 18}
+                fill="none" stroke="#1E90FF" strokeWidth="1"
+                strokeDasharray="7 14" opacity="0.45"
+              />
+            </svg>
+
+            {/* Thin inner accent ring */}
+            <div style={{
+              position: "absolute", inset: 36,
+              borderRadius: "50%",
+              border: "1px solid rgba(30,144,255,0.22)",
+            }} />
+
+            {/* Ambient blue halo behind emblem */}
+            <div style={{
+              position: "absolute", inset: 42,
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(30,144,255,0.18) 0%, transparent 70%)",
+            }} />
+
+            {/* Center emblem circle */}
+            <div style={{
+              position: "absolute", inset: 44,
+              borderRadius: "50%",
+              background: "linear-gradient(145deg, #0b1828, #060e1c)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              animation: "rgCoreHalo 3.5s ease-in-out infinite",
+            }}>
+              <img
+                src="/rg-core.jpeg"
+                alt="REPOGUARD"
+                style={{
+                  width: "76%", height: "76%",
+                  objectFit: "cover",
+                  borderRadius: "50%",
+                  opacity: isSecure ? 1 : 0.92,
+                  filter: isSecure ? "brightness(1.15) drop-shadow(0 0 8px rgba(110,231,183,0.4))" : "none",
+                  transition: "filter 0.8s, opacity 0.8s",
+                }}
+              />
+            </div>
+
+            {/* Orbital dots */}
+            {[0, 90, 180, 270].map((deg, i) => (
+              <div key={i} style={{
+                position: "absolute", top: "50%", left: "50%",
+                width: 7, height: 7, borderRadius: "50%",
+                background: isSecure ? "#6EE7B7" : "#1E90FF",
+                boxShadow: `0 0 8px ${isSecure ? "#6EE7B7" : "#1E90FF"}`,
+                transform: `rotate(${deg}deg) translateX(${HALF - 6}px) translateY(-50%)`,
+                opacity: 0.8,
+                transition: "background 0.8s, box-shadow 0.8s",
+              }} />
+            ))}
           </div>
 
-          {step === "email" ? (
-          <div style={{ display: "grid", gap: 14 }}>
-            <div>
-              <label style={{ display: "block", fontSize: 11, color: sub, marginBottom: 6,
-                fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Email</label>
-              <input style={inputStyle} value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendCode()}
-                type="email" autoComplete="email" />
+          {/* ── Text stack ──────────────────────────────────────────────── */}
+          <div style={{
+            textAlign: "center", position: "relative", zIndex: 1,
+            padding: "0 24px", maxWidth: 340,
+          }}>
+            <div style={{
+              fontSize: 30, fontWeight: 800, letterSpacing: "0.20em",
+              color: "#C49A47",
+              textShadow: "0 0 30px rgba(196,154,71,0.4)",
+              marginBottom: 8,
+            }}>REPOGUARD</div>
+
+            <div style={{
+              fontSize: 10, color: "rgba(30,144,255,0.75)", fontWeight: 700,
+              letterSpacing: "0.26em", marginBottom: 14,
+            }}>AION SECURITY CORE</div>
+
+            <div style={{
+              width: 40, height: 1,
+              background: "linear-gradient(90deg, transparent, rgba(196,154,71,0.5), transparent)",
+              margin: "0 auto 14px",
+            }} />
+
+            <div style={{
+              fontSize: 9, color: "rgba(255,255,255,0.22)", letterSpacing: "0.18em",
+              fontWeight: 600, marginBottom: 28,
+            }}>
+              MONITORING · VALIDATION · ENFORCEMENT · CONTROL
             </div>
-            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px",
-              background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
-            <button style={btnStyle} onClick={sendCode} disabled={loading}>
-              {loading ? "Sending…" : "Send code"}
-            </button>
-            <div style={{ textAlign: "center", fontSize: 12, color: sub, marginTop: -4 }}>
-              Use the code shown to enter instantly.
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            <div style={{ background: dark ? "rgba(196,154,71,0.10)" : "rgba(196,154,71,0.08)",
-              border: "1px solid rgba(196,154,71,0.32)", borderRadius: 12, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 700,
-                textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
-                Demo verification code
+
+            {/* Boot status line */}
+            {isSecure ? (
+              <div style={{
+                fontSize: 12, color: "#6EE7B7", letterSpacing: "0.18em",
+                fontWeight: 700, animation: "rgSecureConfirm 0.9s ease-out",
+                textShadow: "0 0 14px rgba(110,231,183,0.5)",
+              }}>
+                AUTHORIZATION CONFIRMED
               </div>
-              <div style={{ fontFamily: "monospace", fontSize: 30, fontWeight: 800,
-                color: "#C49A47", letterSpacing: "0.18em" }}>
-                {demoCode}
+            ) : (
+              <div
+                key={bootLineIdx}
+                style={{
+                  fontSize: 13, color: "rgba(255,255,255,0.7)",
+                  letterSpacing: "0.03em", fontFamily: "monospace",
+                  animation: "rgBootLineIn 0.4s ease-out",
+                  minHeight: 20,
+                }}
+              >
+                {BOOT_LINES[bootLineIdx]}
               </div>
-              <div style={{ fontSize: 11, color: sub, marginTop: 4 }}>Sent to {email}</div>
+            )}
+
+            {/* Progress dots */}
+            {isVerifying && (
+              <div style={{ display: "flex", justifyContent: "center", gap: 7, marginTop: 18 }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{
+                    width: 5, height: 5, borderRadius: "50%",
+                    background: "#1E90FF",
+                    boxShadow: "0 0 8px rgba(30,144,255,0.7)",
+                    animation: `rgDotBounce 1.5s ${i * 0.22}s ease-in-out infinite`,
+                  }} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            position: "absolute", bottom: 28,
+            fontSize: 9, color: "rgba(255,255,255,0.18)",
+            letterSpacing: "0.22em", fontWeight: 600, textAlign: "center",
+          }}>
+            NO EXECUTION WITHOUT AUTHORIZATION
+          </div>
+        </div>
+      )}
+
+      {/* ── AUTH FORM (mounts immediately, visible only after handoff) ───── */}
+      <div style={{
+        minHeight: "100dvh",
+        display: bootPhase === "login" ? "flex" : "none",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "28px 20px",
+        position: "relative",
+        overflow: "hidden",
+        animation: bootPhase === "login" ? "rgAuthSlideIn 0.7s ease-out" : "none",
+      }}>
+
+        {/* Ghost watermark */}
+        <img src="/rg-ghost.jpeg" alt="" aria-hidden="true" style={{
+          position: "absolute", inset: 0, width: "100%", height: "100%",
+          objectFit: "cover", opacity: 0.05, filter: "blur(10px)",
+          transform: "scale(1.1)", pointerEvents: "none",
+        }} />
+
+        {/* Ambient halo */}
+        <div style={{
+          position: "absolute", top: "20%", left: "50%",
+          width: 360, height: 360, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(30,144,255,0.10) 0%, transparent 65%)",
+          transform: "translate(-50%, -50%)", pointerEvents: "none",
+        }} />
+
+        <div style={{
+          position: "relative", zIndex: 1,
+          width: "100%", maxWidth: 400,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 24,
+        }}>
+
+          {/* REPOGUARD mini-badge */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 18px",
+            background: "rgba(30,144,255,0.08)",
+            border: "1px solid rgba(30,144,255,0.20)",
+            borderRadius: 100,
+          }}>
+            <img src="/rg-core.jpeg" alt="" style={{
+              width: 24, height: 24, borderRadius: "50%", objectFit: "cover",
+            }} />
+            <span style={{
+              fontSize: 11, fontWeight: 700, letterSpacing: "0.18em",
+              color: "#C49A47",
+            }}>REPOGUARD</span>
+            <span style={{
+              fontSize: 9, color: "#6EE7B7", fontWeight: 600,
+              letterSpacing: "0.12em", marginLeft: 2,
+            }}>● SECURE</span>
+          </div>
+
+          {/* Auth card */}
+          <div style={{
+            width: "100%",
+            background: "rgba(8,16,28,0.88)",
+            borderRadius: 20,
+            padding: "28px 24px",
+            border: "1px solid rgba(30,144,255,0.14)",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)",
+            backdropFilter: "blur(12px)",
+          }}>
+
+            {/* Card header */}
+            <div style={{ marginBottom: 26 }}>
+              <div style={{
+                fontSize: 22, fontWeight: 800, color: "#C49A47",
+                letterSpacing: "0.04em", lineHeight: 1.1,
+              }}>Sign in</div>
+              <div style={{
+                color: sub, marginTop: 5, fontSize: 13, letterSpacing: "0.01em",
+              }}>Secure access · Email & 2FA</div>
             </div>
 
-            <div>
-              <label style={{ display: "block", fontSize: 11, color: sub, marginBottom: 6,
-                fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Enter code</label>
-              <input style={{ ...inputStyle, fontFamily: "monospace", fontSize: 22,
-                letterSpacing: "0.22em", textAlign: "center" }}
-                value={code}
-                onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                onKeyDown={e => e.key === "Enter" && verifyCode()}
-                placeholder="000000" inputMode="numeric" maxLength={6} autoFocus />
-            </div>
-            {error && <div style={{ color: "#FCA5A5", fontSize: 13, padding: "8px 12px",
-              background: "rgba(252,165,165,0.08)", borderRadius: 8 }}>{error}</div>}
-            <button style={btnStyle} onClick={verifyCode} disabled={loading}>
-              {loading ? "Verifying…" : "Verify and enter"}
-            </button>
-            <button onClick={() => { setStep("email"); setCode(""); setError(""); }}
-              style={{ background: "transparent", border: "none", color: sub,
-                cursor: "pointer", fontSize: 13, padding: "2px 0", fontFamily: "inherit" }}>
-              ← Use a different email
-            </button>
+            {step === "email" ? (
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <label style={{
+                    display: "block", fontSize: 10, color: "rgba(255,255,255,0.35)",
+                    marginBottom: 7, fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: "0.10em",
+                  }}>Email address</label>
+                  <input
+                    style={inputStyle} value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && sendCode()}
+                    type="email" autoComplete="email"
+                  />
+                </div>
+                {error && (
+                  <div style={{
+                    color: "#FCA5A5", fontSize: 13, padding: "9px 12px",
+                    background: "rgba(252,165,165,0.07)", borderRadius: 8,
+                    border: "1px solid rgba(252,165,165,0.15)",
+                  }}>{error}</div>
+                )}
+                <button style={btnStyle} onClick={sendCode} disabled={loading}>
+                  {loading ? "Sending…" : "Send verification code"}
+                </button>
+                <div style={{
+                  textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.25)",
+                  letterSpacing: "0.02em",
+                }}>
+                  Demo code will appear instantly
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 14 }}>
+                <div style={{
+                  background: "rgba(196,154,71,0.08)",
+                  border: "1px solid rgba(196,154,71,0.28)",
+                  borderRadius: 12, padding: "14px 16px",
+                }}>
+                  <div style={{
+                    fontSize: 10, color: "#C49A47", fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: "0.10em", marginBottom: 8,
+                  }}>Demo verification code</div>
+                  <div style={{
+                    fontFamily: "monospace", fontSize: 30, fontWeight: 800,
+                    color: "#C49A47", letterSpacing: "0.22em",
+                    textShadow: "0 0 16px rgba(196,154,71,0.4)",
+                  }}>{demoCode}</div>
+                  <div style={{ fontSize: 11, color: sub, marginTop: 5 }}>Sent to {email}</div>
+                </div>
+
+                <div>
+                  <label style={{
+                    display: "block", fontSize: 10, color: "rgba(255,255,255,0.35)",
+                    marginBottom: 7, fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: "0.10em",
+                  }}>Enter code</label>
+                  <input
+                    style={{ ...inputStyle, fontFamily: "monospace", fontSize: 24,
+                      letterSpacing: "0.24em", textAlign: "center" }}
+                    value={code}
+                    onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onKeyDown={e => e.key === "Enter" && verifyCode()}
+                    placeholder="000000" inputMode="numeric" maxLength={6} autoFocus
+                  />
+                </div>
+
+                {error && (
+                  <div style={{
+                    color: "#FCA5A5", fontSize: 13, padding: "9px 12px",
+                    background: "rgba(252,165,165,0.07)", borderRadius: 8,
+                    border: "1px solid rgba(252,165,165,0.15)",
+                  }}>{error}</div>
+                )}
+
+                <button style={btnStyle} onClick={verifyCode} disabled={loading}>
+                  {loading ? "Verifying…" : "Verify and enter"}
+                </button>
+
+                <button
+                  onClick={() => { setStep("email"); setCode(""); setError(""); }}
+                  style={{
+                    background: "transparent", border: "none",
+                    color: "rgba(255,255,255,0.35)",
+                    cursor: "pointer", fontSize: 13, padding: "2px 0",
+                    fontFamily: "inherit", letterSpacing: "0.01em",
+                  }}
+                >
+                  ← Use a different email
+                </button>
+              </div>
+            )}
           </div>
-          )}
+
+          {/* Auth footer */}
+          <div style={{
+            fontSize: 9, color: "rgba(255,255,255,0.15)",
+            letterSpacing: "0.18em", fontWeight: 600,
+          }}>
+            NO EXECUTION WITHOUT AUTHORIZATION
+          </div>
         </div>
       </div>
     </div>

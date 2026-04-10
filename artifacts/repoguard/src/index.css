@@ -65,6 +65,39 @@
   0%, 100% { box-shadow: 0 0 16px var(--rg-color, #32CD32); }
   50%       { box-shadow: 0 0 32px var(--rg-color, #32CD32), 0 0 60px var(--rg-color, #32CD32); }
 }
+@keyframes rgBootIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes rgBootOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.04); }
+}
+@keyframes rgAuthSlideIn {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes rgAmbientGlow {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+  50%       { opacity: 1;    transform: translate(-50%, -50%) scale(1.14); }
+}
+@keyframes rgDotBounce {
+  0%, 70%, 100% { opacity: 0.2; transform: scale(0.8); }
+  35%           { opacity: 1;   transform: scale(1.25); }
+}
+@keyframes rgBootLineIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes rgSecureConfirm {
+  0%   { opacity: 0; letter-spacing: 0.08em; }
+  50%  { opacity: 1; letter-spacing: 0.22em; }
+  100% { opacity: 1; letter-spacing: 0.18em; }
+}
+@keyframes rgCoreHalo {
+  0%, 100% { box-shadow: 0 0 24px rgba(30,144,255,0.25), inset 0 0 16px rgba(30,144,255,0.08); }
+  50%       { box-shadow: 0 0 48px rgba(30,144,255,0.45), inset 0 0 28px rgba(30,144,255,0.15); }
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
