@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySourcePicker";
 import { useIsMobile } from "./hooks/use-mobile";
 import WarRoomFeed from "./components/WarRoomFeed";
+import RepoGuardCore, { type RGStatus } from "./components/RepoGuardCore";
 
 const pages = ["Command", "Breach", "Correction", "Resolution"];
 
@@ -484,6 +485,29 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
   const [demoCode, setDemoCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [bootStatus, setBootStatus] = useState<RGStatus>("verifying");
+  const [bootMessage, setBootMessage] = useState("Running policy checks…");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/repoguard/verify");
+        if (!cancelled) {
+          const data = await res.json();
+          const mapped: RGStatus = data.status === "secure" ? "secure" : "locked";
+          setBootStatus(mapped);
+          setBootMessage(data.message ?? "");
+        }
+      } catch {
+        if (!cancelled) {
+          setBootStatus("locked");
+          setBootMessage("Verification service unavailable");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const dark = theme === "dark";
   const bg = dark ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)" : "linear-gradient(180deg,#F7F4EE 0%,#EBE3D6 100%)";
   const text = dark ? "#fff" : "#1C2C45";
@@ -554,17 +578,30 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
   return (
     <div style={{ minHeight: "100dvh", background: bg, display: "grid",
       placeItems: "center", padding: "20px 16px",
-      fontFamily: "Inter, system-ui, sans-serif" }}>
-      <div style={{ width: "100%", maxWidth: 420, background: cardBg, color: text,
-        borderRadius: 20, padding: "28px 24px",
-        border: `1px solid ${border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
+      fontFamily: "Inter, system-ui, sans-serif", position: "relative", overflow: "hidden" }}>
 
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ color: "#C49A47", fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>RepoGuard</div>
-          <div style={{ color: sub, marginTop: 5, fontSize: 14 }}>Secure sign in with email and 2FA.</div>
-        </div>
+      {/* Ghost background logo */}
+      <img src="/rg-ghost.jpeg" alt="" aria-hidden="true" style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        objectFit: "cover", opacity: 0.06, filter: "blur(8px)", pointerEvents: "none",
+        transform: "scale(1.1)",
+      }} />
 
-        {step === "email" ? (
+      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 420,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 28 }}>
+
+        <RepoGuardCore status={bootStatus} size="md" showLabel={true} showImage={true} />
+
+        <div style={{ width: "100%", background: cardBg, color: text,
+          borderRadius: 20, padding: "28px 24px",
+          border: `1px solid ${border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.22)" }}>
+
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ color: "#C49A47", fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>RepoGuard</div>
+            <div style={{ color: sub, marginTop: 5, fontSize: 14 }}>Secure sign in with email and 2FA.</div>
+          </div>
+
+          {step === "email" ? (
           <div style={{ display: "grid", gap: 14 }}>
             <div>
               <label style={{ display: "block", fontSize: 11, color: sub, marginBottom: 6,
@@ -619,7 +656,8 @@ function AuthScreen({ theme, sound, haptics, onAuthenticated }: any) {
               ← Use a different email
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1161,8 +1199,19 @@ export default function App() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 18, gap: 12, flexWrap: "wrap" }}>
 
-          {/* Left: title + threat badge + live pulse */}
+          {/* Left: shield core · title · threat badge · live pulse */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <RepoGuardCore
+              status={
+                displayStatus === "breach"     ? "breach"    :
+                displayStatus === "correcting" ? "verifying" :
+                displayStatus === "warning"    ? "verifying" :
+                "secure"
+              }
+              size="sm"
+              showLabel={false}
+              showImage={false}
+            />
             <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
               RepoGuard
             </div>

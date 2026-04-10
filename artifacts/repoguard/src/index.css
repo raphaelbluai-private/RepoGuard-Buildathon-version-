@@ -46,6 +46,25 @@
   0%   { transform: translateY(0); }
   100% { transform: translateY(-50%); }
 }
+@keyframes rgSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes rgShake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-4px); }
+  40%       { transform: translateX(4px); }
+  60%       { transform: translateX(-3px); }
+  80%       { transform: translateX(3px); }
+}
+@keyframes rgPulseRing {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(1.06); opacity: 0.8; }
+}
+@keyframes rgGlow {
+  0%, 100% { box-shadow: 0 0 16px var(--rg-color, #32CD32); }
+  50%       { box-shadow: 0 0 32px var(--rg-color, #32CD32), 0 0 60px var(--rg-color, #32CD32); }
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
