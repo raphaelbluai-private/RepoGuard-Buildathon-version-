@@ -78,17 +78,23 @@ function FeedItem({ event, dark }: { event: FeedEvent; dark: boolean }) {
             {event.message}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: timeColor, flexShrink: 0 }}>{elapsed}s ago</span>
+        <span style={{ fontSize: 11, color: timeColor, flexShrink: 0 }}>{getElapsed(elapsed)}</span>
       </div>
     </div>
   );
 }
 
 // ─── Cinematic Ticker ─────────────────────────────────────────────────────────
-function CinematicTicker() {
+function CinematicTicker({ dark }: { dark: boolean }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-yellow-500/20 bg-black/30 backdrop-blur-md mb-3">
-      <div className="whitespace-nowrap py-2 text-xs tracking-wide text-white/70 animate-ticker-scroll">
+    <div className="overflow-hidden rounded-xl mb-3" style={{
+      border: "1px solid rgba(196,154,71,0.20)",
+      background: dark ? "rgba(0,0,0,0.30)" : "rgba(28,44,69,0.07)",
+      backdropFilter: "blur(12px)",
+    }}>
+      <div className="whitespace-nowrap py-2 text-xs tracking-wide animate-ticker-scroll" style={{
+        color: dark ? "rgba(255,255,255,0.70)" : "rgba(28,44,69,0.65)",
+      }}>
         <span className="inline-block pl-[100%]">
           LIVE MONITORING ACTIVE&nbsp;&nbsp;•&nbsp;&nbsp;ENFORCEMENT ARMED&nbsp;&nbsp;•&nbsp;&nbsp;SECRET ROTATION ONLINE&nbsp;&nbsp;•&nbsp;&nbsp;MERGE PROTECTION ACTIVE&nbsp;&nbsp;•&nbsp;&nbsp;POLICY ENGINE SYNCHRONIZED&nbsp;&nbsp;•&nbsp;&nbsp;REPO INTEGRITY CHECKS RUNNING&nbsp;&nbsp;•&nbsp;&nbsp;
         </span>
@@ -165,7 +171,7 @@ export default function WarRoomFeed({ theme }: { theme: string }) {
         </div>
 
         {/* Cinematic ticker */}
-        <CinematicTicker />
+        <CinematicTicker dark={dark} />
 
         {/* Scrolling feed */}
         <div style={{ position: "relative", height: 300 }}>

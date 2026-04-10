@@ -1023,6 +1023,8 @@ export default function App() {
     catch { return { sound: true, haptics: true, theme: "dark", repoTargets: ["GitHub"] }; }
   });
   const lastEventCount = useRef(0);
+  const settingsRef = useRef(settings);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
   const activeIndex = useMemo(() => pages.indexOf(page), [page]);
   const theme = settings.theme;
 
@@ -1087,8 +1089,8 @@ export default function App() {
     // Phase 2 — Correction page after 4 s
     setTimeout(() => {
       setPage("Correction");
-      playSwoosh(settings.sound);
-      haptic(settings.haptics, 18);
+      playSwoosh(settingsRef.current.sound);
+      haptic(settingsRef.current.haptics, 18);
     }, 4000);
 
     // Phase 3 — Resolve backend, jump to Resolution page after 8 s
@@ -1096,8 +1098,8 @@ export default function App() {
       await fetch("/api/demo-resolve", { method: "POST" });
       await refreshState();
       setPage("Resolution");
-      playTing(settings.sound);
-      haptic(settings.haptics, [10, 30, 10]);
+      playTing(settingsRef.current.sound);
+      haptic(settingsRef.current.haptics, [10, 30, 10]);
     }, 8000);
   };
 
@@ -1549,7 +1551,7 @@ export default function App() {
               }
               size="sm"
               showLabel={false}
-              showImage={false}
+              showImage={true}
             />
             <div style={{ color: "#C49A47", fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>
               RepoGuard
