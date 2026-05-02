@@ -87,8 +87,11 @@ def normalize_repo(s: str):
     s = (s or "").strip()
     if not s:
         return None, None, "Repository is required."
-    # Strip trailing slashes / fragments / query strings
+    # Strip query strings / fragments / trailing slashes
     s = s.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    # Strip GitHub URL suffixes after owner/repo:
+    # /tree/<branch>[/path], /blob/<branch>/path, /pull/N, /issues/N, /actions, etc.
+    s = re.sub(r"/(tree|blob|pull|issues|actions|wiki|releases|commits?|compare)(/.*)?$", "", s)
     m = _REPO_RE.search(s)
     if not m:
         return None, None, "Use owner/repo or a github.com URL."

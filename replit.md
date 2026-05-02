@@ -99,8 +99,27 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 - `POST /api/demo-trigger` — trigger the breach detection demo flow
 - `POST /api/scan` — War Room real-repo scan; body `{repo}`; rate-limited 15/60s/IP
 
+## Production deployment
+
+- Single-process autoscale: FastAPI (`backend/app.py`) serves both the built React
+  frontend (`artifacts/repoguard/dist/public`) AND `/api/*`. Vite is dev-only.
+- Build: `pnpm --filter @workspace/repoguard run build && pip install -r backend/requirements.txt`
+- Run: `cd backend && python run.py` — binds to `$PORT` (set to 18733 by `services.env`)
+- SPA fallback in `app.py` resolves requested paths and enforces they stay inside
+  `_DIST` via `.resolve()` + `.relative_to(_DIST)` to block path-traversal file disclosure;
+  any escape attempt silently falls through to `index.html`.
+- `/api/_internal/rate-stats` is 404'd in production unless `REPOGUARD_INTERNAL=1`
+  is set (dev/CI only). It exposes limiter telemetry and must never be public.
+- Production config lives in `artifacts/repoguard/.replit-artifact/artifact.toml`
+  under `[services.production]` (build / run). The `.replit` `[deployment.run]` is
+  ignored in the pnpm-workspace template.
+
 ## Notes
 
 - Auth is demo-grade only (codes returned directly in API response for demo)
 - Backend uses in-memory state (resets on restart)
-- Frontend proxies `/api` calls to `http://127.0.0.1:8000`
+- Frontend proxies `/api` calls to `http://127.0.0.1:8000` in dev only
+- `normalize_repo()` in `backend/scanner.py` strips GitHub URL suffixes
+  (`/tree/<branch>`, `/blob/<branch>/path`, `/pull/N`, `/issues/N`, `/actions`,
+  `/wiki`, `/releases`, `/commits?`, `/compare`) before regex-matching, so a user
+  pasting any GitHub deep-link still gets the right `owner/repo` parsed out.
