@@ -42,7 +42,37 @@ export type ScanResponse = ScanResult | ScanError;
 
 export type Severity = "critical" | "high" | "medium" | "low";
 
-export type RiskStatus = "open" | "fixing" | "resolved";
+export type RiskStatus =
+  | "open"
+  | "needs_review"
+  | "resolved_manually"
+  | "accepted_risk";
+
+export const RISK_STATUS_LABEL: Record<RiskStatus, string> = {
+  open: "Open",
+  needs_review: "Needs Review",
+  resolved_manually: "Resolved Manually",
+  accepted_risk: "Accepted Risk",
+};
+
+export const RISK_STATUS_COLOR: Record<RiskStatus, string> = {
+  open: "#FCA5A5",
+  needs_review: "#FCD34D",
+  resolved_manually: "#6EE7B7",
+  accepted_risk: "#93C5FD",
+};
+
+const _RISK_STATUS_VALUES: ReadonlySet<string> = new Set([
+  "open", "needs_review", "resolved_manually", "accepted_risk",
+]);
+
+// Runtime guard: backend or older sample data may send anything; never trust
+// a raw string. Unknown values fall back to "open" so labels/colors stay defined.
+export function coerceRiskStatus(raw: unknown): RiskStatus {
+  return typeof raw === "string" && _RISK_STATUS_VALUES.has(raw)
+    ? (raw as RiskStatus)
+    : "open";
+}
 
 export type GateState = "pass" | "warning" | "fail";
 

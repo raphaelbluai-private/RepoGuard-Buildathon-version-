@@ -502,7 +502,7 @@ const BOOT_LINES = [
   "Loading protected interface...",
 ];
 
-function AuthScreen({ sound, haptics, onAuthenticated }: any) {
+function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
   const [email, setEmail] = useState("demo@repoguard.ai");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
@@ -927,6 +927,37 @@ function AuthScreen({ sound, haptics, onAuthenticated }: any) {
                 }}>
                   Demo code will appear instantly
                 </div>
+
+                {/* Public War Room — no login required */}
+                <div style={{
+                  marginTop: 6, paddingTop: 14,
+                  borderTop: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => { playClick(sound); haptic(haptics, 8); onTryPublic && onTryPublic(); }}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid rgba(196,154,71,0.45)",
+                      color: "#C49A47",
+                      borderRadius: 12, padding: "11px 14px",
+                      fontFamily: "inherit", fontSize: 14, fontWeight: 700,
+                      letterSpacing: "0.01em", cursor: "pointer",
+                      transition: "background 120ms ease, transform 120ms ease",
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.background = "rgba(196,154,71,0.10)")}
+                    onMouseOut={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Try War Room — scan a public repo (no login) →
+                  </button>
+                  <div style={{
+                    textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.30)",
+                    letterSpacing: "0.02em",
+                  }}>
+                    Public scanner · no GitHub token required
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
@@ -1013,6 +1044,19 @@ export default function App() {
   const [animatingScore, setAnimatingScore] = useState(72);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState("");
+  // Deep-link / share-link bypass: any visitor hitting "/?repo=..." or
+  // "/?warroom=1" or "/?sample=1" lands directly in the public War Room
+  // — no boot animation, no Sign In screen. This makes scan URLs shareable
+  // and is what judges/visitors will see when given a link.
+  const [publicWarRoom, setPublicWarRoom] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return !!(p.get("repo") || p.get("warroom") === "1" || p.get("sample") === "1");
+    } catch {
+      return false;
+    }
+  });
   const [settings, setSettings] = useState<any>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("repoguard-settings") || "");
@@ -1140,8 +1184,65 @@ export default function App() {
     [repos, activePlatforms.join(",")]
   );
 
-  if (!authenticatedUser) {
-    return <AuthScreen theme={theme} sound={settings.sound} haptics={settings.haptics} onAuthenticated={setAuthenticatedUser} />;
+  if (!authenticatedUser && !publicWarRoom) {
+    return (
+      <AuthScreen
+        theme={theme}
+        sound={settings.sound}
+        haptics={settings.haptics}
+        onAuthenticated={setAuthenticatedUser}
+        onTryPublic={() => setPublicWarRoom(true)}
+      />
+    );
+  }
+
+  // Public War Room shell — no auth, no other tabs, no polling.
+  // This is the path judges/visitors land on when they click "Try War Room".
+  if (publicWarRoom && !authenticatedUser) {
+    const dark = theme === "dark";
+    const shellBg = dark
+      ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)"
+      : "linear-gradient(180deg,#DDD0B8 0%,#C9BB9E 100%)";
+    const shellText = dark ? "white" : "#1C2C45";
+    return (
+      <div style={{
+        minHeight: "100dvh", background: shellBg, color: shellText,
+        fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px",
+      }}>
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "16px 22px", borderBottom: dark
+            ? "1px solid rgba(255,255,255,0.06)"
+            : "1px solid rgba(28,44,69,0.06)",
+          marginBottom: 18,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              fontSize: 14, fontWeight: 800, color: "#C49A47", letterSpacing: "0.10em",
+            }}>REPOGUARD</span>
+            <span style={{
+              fontSize: 10, color: dark ? "rgba(255,255,255,0.45)" : "rgba(28,44,69,0.50)",
+              letterSpacing: "0.10em", textTransform: "uppercase",
+            }}>· Public Scanner</span>
+          </div>
+          <button
+            onClick={() => setPublicWarRoom(false)}
+            style={{
+              background: "transparent",
+              border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
+              color: dark ? "rgba(255,255,255,0.75)" : "rgba(28,44,69,0.75)",
+              borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
+              fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+            }}
+          >
+            Sign in →
+          </button>
+        </div>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 18px" }}>
+          <WarRoom theme={theme} />
+        </div>
+      </div>
+    );
   }
 
   const dark = theme === "dark";

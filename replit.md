@@ -39,13 +39,26 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 - Email login screen with 2FA demo verification
 - Animated 4-stage breach detection demo (Command → Breach → Correction → Resolution)
 - **War Room safety command layer** — public, real-repo scanner (Buildathon shipped feature)
+  - **Public-by-default**: AuthScreen has a "Try War Room — scan a public repo (no login) →"
+    button that bypasses 2FA. Visiting `/?repo=owner/repo`, `/?warroom=1`, or `/?sample=1`
+    skips the boot/auth screen entirely (publicWarRoom state initialized synchronously
+    from URLSearchParams in App.tsx). Public mode shows a minimal shell with a
+    "REPOGUARD · Public Scanner" top bar and a "Sign in →" escape hatch.
+  - Hero header: "RepoGuard War Room / Agent-Built Safety Layer for AI Apps /
+    Scan your project before you ship."
   - Repo input form: scans any public GitHub repo via unauthenticated GitHub Contents API (no token, no login)
   - Sample Scan fallback: deterministic seeded findings (5 risks, score 38 → 96) when GitHub is unreachable
   - Command Dashboard (status / integrity / risk mix / top blocker)
   - Before/After Integrity Score, Risk Detection Panel
   - What Broke / Why / How to Fix drill-down + deterministic Fix Plan Generator
+  - **Per-finding triage statuses**: Open / Needs Review / Resolved Manually / Accepted Risk,
+    user-settable in the drill-down (statusOverrides Record<string, RiskStatus> in WarRoom).
+    Risk-card pill updates live; runtime-coerced via `coerceRiskStatus` so unknown values
+    fall back to "open".
   - Safe-to-Ship Checklist (8 gates derived from real findings), Agent Build Trace timeline
   - Safe-to-Ship Report modal with Copy Summary / Download JSON / Download CSV exports
+  - **Deep-link sharing**: `/?repo=owner/repo` auto-runs the scan on load; `/?sample=1`
+    loads the seeded sample. StrictMode-guarded so the dev double-mount doesn't double-fire.
   - Backend scan engine: 12 deterministic checks (committed .env, token regexes, missing .env.example,
     real secrets in .env.example, package.json build/start, lockfile, workflow permissions,
     .replit deployment block, eval/exec/shell=True/child_process.exec/rm-rf//curl|sh/wget|sh, README)

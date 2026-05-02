@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   SEEDED_RISKS,
   GATES_BEFORE,
@@ -11,7 +11,11 @@ import {
   GATE_COLOR,
   GATE_ICON,
   CATEGORY_ICON,
+  RISK_STATUS_LABEL,
+  RISK_STATUS_COLOR,
+  coerceRiskStatus,
   type Risk,
+  type RiskStatus,
   type SafetyGate,
   type ScanResult,
   type ScanResponse,
@@ -35,6 +39,16 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const [selectedRiskId, setSelectedRiskId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [repoInput, setRepoInput] = useState("");
+  // User-driven status overrides per finding id. Backend always emits "open";
+  // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>({});
+
+  function setRiskStatus(id: string, s: RiskStatus) {
+    setStatusOverrides(prev => ({ ...prev, [id]: s }));
+  }
+  function effectiveStatus(r: Risk): RiskStatus {
+    return statusOverrides[r.id] ?? coerceRiskStatus(r.status);
+  }
 
   const hasScan = scanMode.kind === "real" || scanMode.kind === "sample";
   const isReal  = scanMode.kind === "real";
@@ -200,7 +214,28 @@ export default function WarRoom({ theme }: WarRoomProps) {
     setFixesApplied(false);
     setSelectedRiskId(null);
     setRepoInput("");
+    setStatusOverrides({});
   }
+
+  // Deep-link support: ?repo=owner/repo (or full URL) auto-runs a real scan
+  // on mount. Lets judges/users share a stable "scan this repo" URL.
+  // Module-level guard prevents StrictMode dev double-mount from firing twice.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ((window as any).__warroomDeepLinkFired) return;
+    (window as any).__warroomDeepLinkFired = true;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const r = params.get("repo");
+      if (r && r.trim()) {
+        setRepoInput(r.trim());
+        setTimeout(() => { void handleRealScan(r.trim()); }, 0);
+      } else if (params.get("sample") === "1") {
+        handleSampleScan();
+      }
+    } catch { /* ignore malformed URLs */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cardBg     = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
@@ -274,6 +309,34 @@ export default function WarRoom({ theme }: WarRoomProps) {
         }
         .wr-risk-card:hover { transform: translateY(-2px); }
       `}</style>
+
+      {/* ── Hero header ──────────────────────────────────────────────────── */}
+      <div style={{
+        marginBottom: 14, padding: "26px 24px 24px", borderRadius: 18,
+        background: dark
+          ? "linear-gradient(135deg, rgba(196,154,71,0.12) 0%, rgba(28,44,69,0.55) 100%)"
+          : "linear-gradient(135deg, rgba(196,154,71,0.18) 0%, rgba(255,255,255,0.85) 100%)",
+        border: "1px solid rgba(196,154,71,0.32)",
+        boxShadow: dark ? "0 6px 28px rgba(0,0,0,0.30)" : "0 6px 28px rgba(28,44,69,0.06)",
+      }}>
+        <div style={{
+          fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.14em",
+          textTransform: "uppercase", marginBottom: 8,
+        }}>
+          RepoGuard War Room
+        </div>
+        <div style={{
+          fontSize: 26, fontWeight: 800, color: text, lineHeight: 1.15,
+          letterSpacing: "-0.01em", marginBottom: 8,
+        }}>
+          Agent-Built Safety Layer for AI Apps
+        </div>
+        <div style={{ fontSize: 15, color: subText, lineHeight: 1.55, maxWidth: 660 }}>
+          Scan your project before you ship. Paste any public GitHub repo, and RepoGuard
+          runs deterministic checks for secrets, env vars, workflows, deploy config, and
+          unsafe patterns — no login, no GitHub token, no AI in the loop.
+        </div>
+      </div>
 
       {/* ── 0. Repo Input ───────────────────────────────────────────────── */}
       <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
@@ -467,6 +530,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
                 fixed={fixesApplied}
                 selected={selectedRiskId === r.id}
                 onClick={() => setSelectedRiskId(id => id === r.id ? null : r.id)}
+                statusOverride={statusOverrides[r.id]}
                 theme={theme}
               />
             ))}
@@ -493,6 +557,39 @@ export default function WarRoom({ theme }: WarRoomProps) {
             <DetailRow label="What broke"     body={selectedRisk.whatBroke}  theme={theme} />
             <DetailRow label="Why it matters" body={selectedRisk.whyMatters} theme={theme} />
             <DetailRow label="How to fix"     body={selectedRisk.howToFix}   theme={theme} />
+
+            {/* Status selector — visitors can mark their own triage decisions. */}
+            <div style={{
+              marginTop: 12, paddingTop: 12,
+              borderTop: `1px solid ${divider}`,
+              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+            }}>
+              <span style={{
+                fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
+                textTransform: "uppercase",
+              }}>
+                Mark status
+              </span>
+              {(["open", "needs_review", "resolved_manually", "accepted_risk"] as RiskStatus[]).map(s => {
+                const active = effectiveStatus(selectedRisk) === s;
+                const c = RISK_STATUS_COLOR[s];
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setRiskStatus(selectedRisk.id, s)}
+                    style={{
+                      padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit",
+                      background: active ? `${c}26` : (dark ? "rgba(255,255,255,0.04)" : "rgba(28,44,69,0.04)"),
+                      border: active ? `1px solid ${c}88` : `1px solid ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.10)"}`,
+                      color: active ? c : (dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)"),
+                    }}
+                  >
+                    {RISK_STATUS_LABEL[s]}
+                  </button>
+                );
+              })}
+            </div>
 
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${divider}` }}>
               {!fixesApplied ? (
@@ -648,14 +745,16 @@ function ScoreBlock({ label, value, color, theme }: {
   );
 }
 
-function RiskCardView({ risk, fixed, selected, onClick, theme }: {
-  risk: Risk; fixed: boolean; selected: boolean; onClick: () => void; theme: string;
+function RiskCardView({ risk, fixed, selected, onClick, statusOverride, theme }: {
+  risk: Risk; fixed: boolean; selected: boolean; onClick: () => void;
+  statusOverride?: RiskStatus; theme: string;
 }) {
   const dark = theme !== "light";
-  const status = fixed ? "resolved" : risk.status;
+  const baseStatus: RiskStatus = statusOverride ?? coerceRiskStatus(risk.status);
+  const status: RiskStatus = fixed ? "resolved_manually" : baseStatus;
   const sevColor = SEVERITY_COLOR[risk.severity];
-  const statusColor = status === "resolved" ? "#6EE7B7" : status === "fixing" ? "#FCD34D" : sevColor;
-  const statusLabel = status === "resolved" ? "Resolved" : status === "fixing" ? "Fixing" : "Open";
+  const statusColor = RISK_STATUS_COLOR[status];
+  const statusLabel = RISK_STATUS_LABEL[status];
 
   return (
     <div className="wr-risk-card" onClick={onClick} style={{
