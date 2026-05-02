@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from scanner import scan_repo
+
 # ─── Rate Limiter ─────────────────────────────────────────────────────────────
 # Pure stdlib, thread-safe, sliding-window implementation.
 # Keys are namespaced strings (e.g. "otp_req:ip:1.2.3.4").
@@ -94,9 +96,10 @@ limiter = _RateLimiter()
 
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
+    # Trust the direct socket address. We intentionally do NOT honour
+    # X-Forwarded-For because, without a verified trusted-proxy chain, any
+    # client could spoof the header to bypass per-IP rate limits and burn
+    # through GitHub's unauthenticated API quota for everyone else.
     return request.client.host if request.client else "unknown"
 
 
@@ -359,3 +362,26 @@ def resolve():
     system_status["status"] = "resolved"
     stamp("Repository returned to compliant state")
     return {"status": "ok"}
+
+
+# ─── Real public-repo scan (War Room) ────────────────────────────────────────
+# No GitHub token required; uses GitHub's public unauthenticated Contents API.
+# Rate limited per-IP so a single visitor can't exhaust the upstream quota.
+
+class ScanBody(BaseModel):
+    repo: str
+
+
+@app.post("/api/scan")
+def scan_endpoint(body: ScanBody, request: Request):
+    ip = _client_ip(request)
+    _enforce(f"war_room_scan:{ip}", limit=15, window=60, lockout_secs=60)
+    try:
+        result = scan_repo(body.repo)
+    except Exception as e:
+        return JSONResponse(
+            status_code=200,
+            content={"ok": False, "error": "SCAN_ERROR",
+                     "message": f"Scan failed unexpectedly: {type(e).__name__}"},
+        )
+    return result

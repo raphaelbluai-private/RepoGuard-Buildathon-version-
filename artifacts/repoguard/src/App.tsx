@@ -1034,14 +1034,27 @@ export default function App() {
   }, [settings]);
 
   async function refreshState() {
-    const [evR, reR, scR, stR] = await Promise.all([
-      fetch("/api/events"), fetch("/api/repos"),
-      fetch("/api/compliance"), fetch("/api/system-status"),
-    ]);
-    setEvents(await evR.json());
-    setRepos(await reR.json());
-    setScore(await scR.json());
-    setStatus((await stR.json()).status);
+    try {
+      const safeJson = async (url: string) => {
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) return null;
+        try { return await r.json(); } catch { return null; }
+      };
+      const [ev, re, sc, st] = await Promise.all([
+        safeJson("/api/events"),
+        safeJson("/api/repos"),
+        safeJson("/api/compliance"),
+        safeJson("/api/system-status"),
+      ]);
+      if (Array.isArray(ev)) setEvents(ev);
+      if (Array.isArray(re)) setRepos(re);
+      if (sc && typeof sc === "object") setScore(sc);
+      if (st && typeof st === "object" && typeof st.status === "string") setStatus(st.status);
+    } catch {
+      /* swallow transient network errors so the dev overlay doesn't block the UI */
+    }
   }
 
   useEffect(() => {

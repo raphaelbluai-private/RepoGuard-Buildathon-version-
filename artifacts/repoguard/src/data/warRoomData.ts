@@ -5,7 +5,40 @@ export type RiskCategory =
   | "Unsafe Shell Execution"
   | "Deployment Blocker"
   | "Dependency Risk"
-  | "Permission Scope Risk";
+  | "Permission Scope Risk"
+  | "Documentation Readiness";
+
+// Backend /api/scan response shape
+export interface ScanRepoMeta {
+  owner: string;
+  name: string;
+  fullName: string;
+  url?: string | null;
+  defaultBranch: string;
+  stars?: number;
+  language?: string | null;
+  description?: string | null;
+}
+
+export interface ScanResult {
+  ok: true;
+  repo: ScanRepoMeta;
+  scanTime: string;       // ISO Z
+  filesScanned: string[];
+  findings: Risk[];
+  score: number;
+  scoreProjected: number;
+  status: "SAFE_TO_SHIP" | "NEEDS_REVIEW" | "SHIP_BLOCKED";
+  gates: SafetyGate[];
+}
+
+export interface ScanError {
+  ok: false;
+  error: string;
+  message: string;
+}
+
+export type ScanResponse = ScanResult | ScanError;
 
 export type Severity = "critical" | "high" | "medium" | "low";
 
@@ -210,4 +243,5 @@ export const CATEGORY_ICON: Record<RiskCategory, string> = {
   "Deployment Blocker":            "🚫",
   "Dependency Risk":               "📦",
   "Permission Scope Risk":         "🛡",
+  "Documentation Readiness":       "📖",
 };

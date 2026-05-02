@@ -38,12 +38,17 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 
 - Email login screen with 2FA demo verification
 - Animated 4-stage breach detection demo (Command → Breach → Correction → Resolution)
-- **War Room safety command layer** — buildathon upgrade page (additive, no backend dependency)
-  - Command Dashboard, Before/After Integrity Score, Risk Detection Panel
+- **War Room safety command layer** — public, real-repo scanner (Buildathon shipped feature)
+  - Repo input form: scans any public GitHub repo via unauthenticated GitHub Contents API (no token, no login)
+  - Sample Scan fallback: deterministic seeded findings (5 risks, score 38 → 96) when GitHub is unreachable
+  - Command Dashboard (status / integrity / risk mix / top blocker)
+  - Before/After Integrity Score, Risk Detection Panel
   - What Broke / Why / How to Fix drill-down + deterministic Fix Plan Generator
-  - Safe-to-Ship Checklist (7 gates), Agent Build Trace timeline, Buildathon Evidence
-  - Safe-to-Ship Report modal with project/scan/integrity/blockers/risks/fixes/checklist
-  - Demo Mode: 5 deterministic seeded risks across 5 categories, score 38 → 96
+  - Safe-to-Ship Checklist (8 gates derived from real findings), Agent Build Trace timeline
+  - Safe-to-Ship Report modal with Copy Summary / Download JSON / Download CSV exports
+  - Backend scan engine: 12 deterministic checks (committed .env, token regexes, missing .env.example,
+    real secrets in .env.example, package.json build/start, lockfile, workflow permissions,
+    .replit deployment block, eval/exec/shell=True/child_process.exec/rm-rf//curl|sh/wget|sh, README)
 - Live event feed
 - Compliance score before/after display
 - Repository status board
@@ -52,8 +57,14 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 ## War Room Implementation Notes
 
 - New page registered as `"War Room"` in `pages` array (App.tsx); slot in `pageContent` map
-- Self-contained: `src/components/WarRoom.tsx` + `src/data/warRoomData.ts`
-- No backend calls; all data deterministic for buildathon demo
+- Frontend: `src/components/WarRoom.tsx` + types in `src/data/warRoomData.ts`
+- Backend scanner: `backend/scanner.py` (pure deterministic, uses `requests` against GitHub public API)
+- Endpoint: `POST /api/scan` with body `{repo: "owner/repo" | github URL}` — rate-limited 15/60s per IP
+- Response: `{ok:true, repo, scanTime, filesScanned, findings, score, scoreProjected, status, gates}`
+  or `{ok:false, error, message}`
+- Severity weights: critical=25, high=15, medium=8, low=3 (max-cap 100, floor 0)
+- Status: SHIP_BLOCKED if any critical or score<60; NEEDS_REVIEW if any high or score<85; else SAFE_TO_SHIP
+- Sample Scan loads seeded data without making any network call (always available as fallback)
 - Rest of app (Command/Breach/Correction/Resolution + scanner) is untouched
 
 ## API Endpoints
@@ -65,6 +76,7 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 - `POST /api/auth/request-code` — send 2FA code (returns demo_code in response)
 - `POST /api/auth/verify-code` — verify 2FA code
 - `POST /api/demo-trigger` — trigger the breach detection demo flow
+- `POST /api/scan` — War Room real-repo scan; body `{repo}`; rate-limited 15/60s/IP
 
 ## Notes
 

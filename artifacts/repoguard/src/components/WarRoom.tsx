@@ -13,28 +13,194 @@ import {
   CATEGORY_ICON,
   type Risk,
   type SafetyGate,
+  type ScanResult,
+  type ScanResponse,
 } from "../data/warRoomData";
 
 interface WarRoomProps {
   theme: string;
 }
 
+type ScanMode =
+  | { kind: "idle" }
+  | { kind: "scanning"; repo: string }
+  | { kind: "real"; data: ScanResult }
+  | { kind: "sample" }
+  | { kind: "error"; error: string; message: string };
+
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
-  const [demoRun, setDemoRun] = useState(false);
+  const [scanMode, setScanMode] = useState<ScanMode>({ kind: "idle" });
   const [fixesApplied, setFixesApplied] = useState(false);
   const [selectedRiskId, setSelectedRiskId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [repoInput, setRepoInput] = useState("");
 
-  const risks: Risk[] = demoRun ? SEEDED_RISKS : [];
-  const gates: SafetyGate[] = !demoRun ? [] : (fixesApplied ? GATES_AFTER : GATES_BEFORE);
+  const hasScan = scanMode.kind === "real" || scanMode.kind === "sample";
+  const isReal  = scanMode.kind === "real";
+  const isSample = scanMode.kind === "sample";
+
+  // ── Source of truth: real scan, sample, or empty ────────────────────────
+  const realScan = scanMode.kind === "real" ? scanMode.data : null;
+
+  const risks: Risk[] =
+    isReal && realScan ? realScan.findings :
+    isSample           ? SEEDED_RISKS :
+                         [];
+
+  const baseGates: SafetyGate[] =
+    isReal && realScan ? realScan.gates :
+    isSample           ? GATES_BEFORE :
+                         [];
+
+  // After fixes: real scans flip every gate to pass; sample uses GATES_AFTER.
+  const gates: SafetyGate[] =
+    !hasScan       ? [] :
+    !fixesApplied  ? baseGates :
+    isReal         ? baseGates.map(g => ({ ...g, state: "pass" as const, detail: "Resolved post-fix" })) :
+                     GATES_AFTER;
+
+  const scoreBefore =
+    isReal && realScan ? realScan.score :
+    isSample           ? SCORE_BEFORE :
+                         0;
+
+  const scoreAfter =
+    isReal && realScan ? realScan.scoreProjected :
+    isSample           ? SCORE_AFTER :
+                         0;
+
+  const scoreCurrent = !hasScan ? 100 : (fixesApplied ? scoreAfter : scoreBefore);
+  const scoreDelta = Math.max(0, scoreAfter - scoreBefore);
+
+  const projectName =
+    isReal && realScan ? realScan.repo.fullName :
+    isSample           ? PROJECT_NAME :
+                         "—";
+
+  const repoUrl = isReal && realScan ? realScan.repo.url : null;
+  const filesScanned = isReal && realScan ? realScan.filesScanned : [];
+
+  const realStatus =
+    isReal && realScan ? realScan.status :
+    isSample           ? (fixesApplied ? "SAFE_TO_SHIP" : "SHIP_BLOCKED") :
+                         "SAFE_TO_SHIP";
+
+  const statusLabel =
+    !hasScan                                  ? "—" :
+    fixesApplied                              ? "READY TO SHIP" :
+    realStatus === "SAFE_TO_SHIP"             ? "SAFE TO SHIP" :
+    realStatus === "NEEDS_REVIEW"             ? "NEEDS REVIEW" :
+                                                "SHIP BLOCKED";
+
+  const statusColor =
+    !hasScan                                  ? "#FCA5A5" :
+    fixesApplied || realStatus === "SAFE_TO_SHIP" ? "#6EE7B7" :
+    realStatus === "NEEDS_REVIEW"             ? "#FCD34D" :
+                                                "#FCA5A5";
 
   const criticalCount = risks.filter(r => r.severity === "critical").length;
-  const scoreCurrent = !demoRun ? 100 : (fixesApplied ? SCORE_AFTER : SCORE_BEFORE);
-  const scoreDelta = SCORE_AFTER - SCORE_BEFORE;
+  const highCount     = risks.filter(r => r.severity === "high").length;
+  const mediumCount   = risks.filter(r => r.severity === "medium").length;
+  const lowCount      = risks.filter(r => r.severity === "low").length;
 
-  const safeToShip = demoRun && fixesApplied;
-  const topBlocker = risks.find(r => r.severity === "critical") ?? risks[0];
+  const safeToShip = hasScan && (fixesApplied || realStatus === "SAFE_TO_SHIP");
+  const topBlocker = risks.find(r => r.severity === "critical")
+                  ?? risks.find(r => r.severity === "high")
+                  ?? risks[0];
+
+  // ── Scan handlers ───────────────────────────────────────────────────────
+  async function handleRealScan(input: string) {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    setScanMode({ kind: "scanning", repo: trimmed });
+    setFixesApplied(false);
+    setSelectedRiskId(null);
+    try {
+      const r = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: trimmed }),
+      });
+
+      // Parse JSON defensively — server may return HTML on a proxy hiccup.
+      let body: any = null;
+      try { body = await r.json(); } catch { body = null; }
+
+      // FastAPI rate-limit / generic HTTPException shape is {detail: ...}.
+      // Map it to our deterministic error shape so the UI can render a
+      // friendly message instead of going blank.
+      if (!r.ok) {
+        if (r.status === 429) {
+          const detail = body && typeof body === "object" ? body.detail : null;
+          const msg = (detail && typeof detail === "object" && typeof detail.message === "string")
+            ? detail.message
+            : "Too many scans from this network. Wait a moment and try again, or use the sample scan.";
+          setScanMode({ kind: "error", error: "RATE_LIMIT", message: msg });
+          return;
+        }
+        setScanMode({
+          kind: "error",
+          error: "SERVER_ERROR",
+          message: `Scanner returned HTTP ${r.status}. Try again or use the sample scan.`,
+        });
+        return;
+      }
+
+      // Validate payload shape before trusting it.
+      if (!body || typeof body !== "object" || typeof body.ok !== "boolean") {
+        setScanMode({
+          kind: "error",
+          error: "BAD_RESPONSE",
+          message: "Scanner returned an unexpected response. Try again or use the sample scan.",
+        });
+        return;
+      }
+
+      if (body.ok) {
+        // Minimal shape validation for the success branch.
+        const looksValid =
+          body.repo && typeof body.repo === "object" &&
+          Array.isArray(body.findings) &&
+          Array.isArray(body.gates) &&
+          typeof body.score === "number";
+        if (!looksValid) {
+          setScanMode({
+            kind: "error",
+            error: "BAD_RESPONSE",
+            message: "Scanner returned an incomplete report. Try again or use the sample scan.",
+          });
+          return;
+        }
+        setScanMode({ kind: "real", data: body as ScanResponse & { ok: true } });
+      } else {
+        setScanMode({
+          kind: "error",
+          error: typeof body.error === "string" ? body.error : "SCAN_FAILED",
+          message: typeof body.message === "string" ? body.message : "The scan could not be completed.",
+        });
+      }
+    } catch {
+      setScanMode({
+        kind: "error",
+        error: "NETWORK_ERROR",
+        message: "Could not reach the scanner. Check your network or try the sample scan.",
+      });
+    }
+  }
+
+  function handleSampleScan() {
+    setScanMode({ kind: "sample" });
+    setFixesApplied(false);
+    setSelectedRiskId(null);
+  }
+
+  function handleResetAll() {
+    setScanMode({ kind: "idle" });
+    setFixesApplied(false);
+    setSelectedRiskId(null);
+    setRepoInput("");
+  }
 
   const cardBg     = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
@@ -43,12 +209,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const subtle     = dark ? "rgba(255,255,255,0.42)" : "rgba(28,44,69,0.42)";
   const divider    = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.07)";
 
-  const lastScan = demoRun ? "Just now" : "—";
-  const agentSummary = !demoRun
-    ? "Idle"
-    : fixesApplied
-      ? "Generated 5 deterministic fix plans · gates re-validated"
-      : "Classified 5 risks across 5 categories";
+  const lastScan = hasScan ? "Just now" : "—";
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
 
@@ -114,6 +275,97 @@ export default function WarRoom({ theme }: WarRoomProps) {
         .wr-risk-card:hover { transform: translateY(-2px); }
       `}</style>
 
+      {/* ── 0. Repo Input ───────────────────────────────────────────────── */}
+      <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
+        <SectionLabel>Scan a Public GitHub Repo</SectionLabel>
+        <div style={{ color: subText, fontSize: 13.5, lineHeight: 1.55, marginBottom: 12,
+          maxWidth: 640 }}>
+          Enter a public repository as <code style={{ fontFamily: "monospace", color: text }}>owner/repo</code>{" "}
+          or a full GitHub URL. No login. No GitHub token. RepoGuard reads the repo's public files
+          and runs deterministic checks for secrets, env vars, workflows, deploy config, and unsafe patterns.
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); handleRealScan(repoInput); }}
+          style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            type="text"
+            value={repoInput}
+            onChange={(e) => setRepoInput(e.target.value)}
+            placeholder="vercel/next.js  or  https://github.com/owner/repo"
+            disabled={scanMode.kind === "scanning"}
+            style={{
+              flex: "1 1 280px", minWidth: 200,
+              padding: "11px 14px", borderRadius: 12,
+              background: dark ? "rgba(255,255,255,0.05)" : "rgba(28,44,69,0.04)",
+              border: `1px solid ${dark ? "rgba(255,255,255,0.12)" : "rgba(28,44,69,0.14)"}`,
+              color: text, fontFamily: "inherit", fontSize: 14, outline: "none",
+            }}
+          />
+          <button type="submit" className="wr-cta"
+            disabled={scanMode.kind === "scanning" || !repoInput.trim()}>
+            {scanMode.kind === "scanning" ? "Scanning…" : "Scan Public Repo"}
+          </button>
+          <button type="button" className="wr-ghost-btn" onClick={handleSampleScan}
+            disabled={scanMode.kind === "scanning"}
+            title="Load deterministic seeded findings — no GitHub call">
+            Try Sample Scan
+          </button>
+          {hasScan && (
+            <button type="button" className="wr-ghost-btn" onClick={handleResetAll}
+              disabled={scanMode.kind === "scanning"}>
+              ↻ Reset
+            </button>
+          )}
+        </form>
+
+        {scanMode.kind === "scanning" && (
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10,
+            background: "rgba(196,154,71,0.10)", border: "1px solid rgba(196,154,71,0.30)",
+            color: text, fontSize: 13 }}>
+            <span style={{ color: "#C49A47", fontWeight: 800 }}>● </span>
+            Fetching <span style={{ fontFamily: "monospace" }}>{scanMode.repo}</span> from GitHub
+            and running 12 deterministic checks…
+          </div>
+        )}
+
+        {scanMode.kind === "error" && (
+          <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10,
+            background: "rgba(252,165,165,0.10)", border: "1px solid rgba(252,165,165,0.40)",
+            color: text, fontSize: 13.5 }}>
+            <div style={{ fontWeight: 800, color: "#FCA5A5", marginBottom: 4 }}>
+              Scan failed · {scanMode.error}
+            </div>
+            <div style={{ color: subText, marginBottom: 10 }}>{scanMode.message}</div>
+            <button className="wr-ghost-btn" onClick={handleSampleScan}>
+              Use sample scan instead →
+            </button>
+          </div>
+        )}
+
+        {isSample && (
+          <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 10,
+            background: "rgba(252,211,77,0.08)", border: "1px solid rgba(252,211,77,0.30)",
+            fontSize: 12.5, color: subText }}>
+            <b style={{ color: "#FCD34D" }}>Sample mode:</b> using deterministic seeded findings,
+            not a real repo. Enter a repo above for a live scan.
+          </div>
+        )}
+
+        {isReal && realScan && (
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10,
+            background: "rgba(110,231,183,0.08)", border: "1px solid rgba(110,231,183,0.30)",
+            fontSize: 12.5, color: subText, lineHeight: 1.5 }}>
+            <span style={{ color: "#6EE7B7", fontWeight: 800 }}>● Live scan</span>{" "}
+            of <a href={realScan.repo.url ?? "#"} target="_blank" rel="noopener noreferrer"
+              style={{ color: "#C49A47", fontFamily: "monospace", textDecoration: "none" }}>
+              {realScan.repo.fullName}
+            </a>{" "}
+            · branch <code style={{ fontFamily: "monospace", color: text }}>{realScan.repo.defaultBranch}</code>
+            {realScan.repo.language && <> · {realScan.repo.language}</>}
+            {" · "}{filesScanned.length} files inspected
+          </div>
+        )}
+      </Card>
+
       {/* ── 1. Command Dashboard ─────────────────────────────────────────── */}
       <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -122,20 +374,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
             <SectionLabel>War Room Command</SectionLabel>
             <div style={{ fontSize: "clamp(20px, 3.5vw, 26px)", fontWeight: 800, color: text,
               lineHeight: 1.15 }}>
-              Safety command layer for {PROJECT_NAME}
+              Safety command layer for {projectName}
             </div>
             <div style={{ color: subText, marginTop: 6, fontSize: 13.5, lineHeight: 1.55, maxWidth: 560 }}>
               One view of every risk an AI-built app must clear before it ships.
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-            <button
-              className="wr-cta"
-              onClick={() => { setDemoRun(true); setFixesApplied(false); setSelectedRiskId(null); }}
-            >
-              {demoRun ? "Re-run Demo Scan" : "Run Demo Scan"}
-            </button>
-            {fixesApplied && (
+          {fixesApplied && (
+            <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
               <button
                 className="wr-ghost-btn"
                 onClick={() => { setFixesApplied(false); setSelectedRiskId(null); }}
@@ -143,20 +389,23 @@ export default function WarRoom({ theme }: WarRoomProps) {
               >
                 ↻ Reset Fixes
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="wr-grid-3">
-          <Tile label="Repo Integrity" value={`${scoreCurrent}%`} accent="#C49A47" theme={theme} />
-          <Tile label="Safe-to-Ship" value={!demoRun ? "—" : safeToShip ? "READY" : "BLOCKED"}
-            accent={!demoRun ? subtle : safeToShip ? "#6EE7B7" : "#FCA5A5"} theme={theme} />
-          <Tile label="Critical Risks" value={!demoRun ? "—" : String(criticalCount)}
+          <Tile label="Repo Integrity" value={hasScan ? `${scoreCurrent}%` : "—"}
+            accent="#C49A47" theme={theme} />
+          <Tile label="Safe-to-Ship" value={statusLabel}
+            accent={statusColor} theme={theme} />
+          <Tile label="Critical Risks" value={!hasScan ? "—" : String(criticalCount)}
             accent={criticalCount > 0 ? "#FCA5A5" : "#6EE7B7"} theme={theme} />
+          <Tile label="Risk Mix" value={!hasScan ? "—" :
+              `${highCount} high · ${mediumCount} med · ${lowCount} low`}
+            accent={text} theme={theme} small />
           <Tile label="Last Scan" value={lastScan} accent={text} theme={theme} small />
-          <Tile label="Agent Activity" value={agentSummary} accent={text} theme={theme} small />
           <Tile label="Top Blocker"
-            value={!demoRun ? "—" : (topBlocker?.shortExplanation ?? "None")}
+            value={!hasScan ? "—" : (topBlocker?.shortExplanation ?? "None")}
             accent={topBlocker?.severity ? SEVERITY_COLOR[topBlocker.severity] : "#6EE7B7"}
             theme={theme} small />
         </div>
@@ -167,9 +416,11 @@ export default function WarRoom({ theme }: WarRoomProps) {
         <SectionLabel>Integrity Score · Before vs After Fix Plan</SectionLabel>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24,
           flexWrap: "wrap", padding: "10px 0 6px" }}>
-          <ScoreBlock label="Before Scan" value={demoRun ? SCORE_BEFORE : 0} color="#FCA5A5" theme={theme} />
+          <ScoreBlock label="Current" value={hasScan ? scoreBefore : 0}
+            color={scoreBefore >= 85 ? "#6EE7B7" : scoreBefore >= 60 ? "#FCD34D" : "#FCA5A5"}
+            theme={theme} />
           <div style={{ fontSize: 28, color: subtle, fontWeight: 700 }}>→</div>
-          <ScoreBlock label="After Fix Plan" value={demoRun ? SCORE_AFTER : 0} color="#6EE7B7" theme={theme} />
+          <ScoreBlock label="After Fix Plan" value={hasScan ? scoreAfter : 0} color="#6EE7B7" theme={theme} />
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
             padding: "10px 16px", borderRadius: 12,
@@ -179,7 +430,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
               SCORE Δ
             </div>
             <div style={{ fontSize: 26, fontWeight: 800, color: "#C49A47" }}>
-              {demoRun ? `+${scoreDelta}` : "—"}
+              {hasScan ? `+${scoreDelta}` : "—"}
             </div>
           </div>
         </div>
@@ -195,11 +446,17 @@ export default function WarRoom({ theme }: WarRoomProps) {
           </span>
         </div>
 
-        {!demoRun ? (
+        {!hasScan ? (
           <EmptyState
             theme={theme}
             title="No scan loaded"
-            body='Click "Run Demo Scan" to load deterministic seeded findings (no GitHub OAuth required).'
+            body="Enter a public GitHub repo above and click Scan Public Repo, or use Try Sample Scan to load deterministic seeded findings."
+          />
+        ) : risks.length === 0 ? (
+          <EmptyState
+            theme={theme}
+            title="Scanner found no findings"
+            body="No risks were detected for this repo against the current ruleset. Integrity 100%."
           />
         ) : (
           <div className="wr-grid-2">
@@ -279,8 +536,9 @@ export default function WarRoom({ theme }: WarRoomProps) {
       <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
         <SectionLabel>Safe-to-Ship Checklist</SectionLabel>
 
-        {!demoRun ? (
-          <EmptyState theme={theme} title="No checklist evaluated" body="Run a demo scan to evaluate the 7 safety gates." />
+        {!hasScan ? (
+          <EmptyState theme={theme} title="No checklist evaluated"
+            body="Run a real or sample scan to evaluate the safety gates." />
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             {gates.map(g => <GateRow key={g.id} gate={g} theme={theme} />)}
@@ -296,7 +554,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
             // Pre-fix: agent has scanned + classified + planned + validated checklist (steps 1-5).
             // Post-fix: agent has also generated the final report (step 6).
             // Pre-scan: nothing reached.
-            const milestoneIndex = !demoRun ? -1 : (fixesApplied ? 5 : 4);
+            const milestoneIndex = !hasScan ? -1 : (fixesApplied ? 5 : 4);
             const reached = i <= milestoneIndex;
             return (
               <TraceStepRow key={i} step={step} reached={reached} isLast={i === AGENT_BUILD_TRACE.length - 1}
@@ -308,19 +566,19 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
       {/* ── 10. Progress Evidence ───────────────────────────────────────── */}
       <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
-        <SectionLabel>Buildathon Evidence</SectionLabel>
+        <SectionLabel>Buildathon Progress</SectionLabel>
         <div style={{ display: "grid", gap: 8, fontSize: 13.5, color: text, lineHeight: 1.6 }}>
           <EvidenceRow label="Built during" value="Replit 10-Year Buildathon" theme={theme} />
-          <EvidenceRow label="Before"       value="Basic repo scan · binary findings, no fix plans" theme={theme} />
-          <EvidenceRow label="After"        value="War Room safety command layer with deterministic fix plans" theme={theme} />
-          <EvidenceRow label="Workflow"     value="Agent-assisted iterative build · prompt → scan → fix → ship" theme={theme} />
-          <EvidenceRow label="Demo path"    value="Safe-to-Ship readiness — works without external OAuth" theme={theme} />
+          <EvidenceRow label="Before" value="Basic repo / security scanner — binary findings, no fix plans" theme={theme} />
+          <EvidenceRow label="After"  value="Public War Room safety command layer with real GitHub scan + deterministic fix plans" theme={theme} />
+          <EvidenceRow label="Workflow" value="Iterative Replit Agent build · prompt → scan → fix → ship" theme={theme} />
+          <EvidenceRow label="Public usable" value="Anyone can scan a public repo + open a Safe-to-Ship report — no login, no token" theme={theme} />
         </div>
       </Card>
 
       {/* ── 7. Generate Report ──────────────────────────────────────────── */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-        <button className="wr-cta" onClick={() => setReportOpen(true)} disabled={!demoRun}>
+        <button className="wr-cta" onClick={() => setReportOpen(true)} disabled={!hasScan}>
           Open Safe-to-Ship Report
         </button>
       </div>
@@ -329,11 +587,18 @@ export default function WarRoom({ theme }: WarRoomProps) {
         <SafeToShipReport
           onClose={() => setReportOpen(false)}
           theme={theme}
+          projectName={projectName}
+          repoUrl={repoUrl}
+          scanTimeISO={isReal && realScan ? realScan.scanTime : new Date().toISOString()}
+          filesScanned={filesScanned}
           risks={risks}
           gates={gates}
-          scoreBefore={SCORE_BEFORE}
-          scoreAfter={fixesApplied ? SCORE_AFTER : scoreCurrent}
+          scoreBefore={scoreBefore}
+          scoreAfter={fixesApplied ? scoreAfter : scoreCurrent}
           fixesApplied={fixesApplied}
+          statusLabel={statusLabel}
+          statusColor={statusColor}
+          isSample={isSample}
         />
       )}
     </div>
@@ -573,14 +838,25 @@ function EmptyState({ title, body, theme }: { title: string; body: string; theme
 
 // ─── Safe-to-Ship Report Modal ────────────────────────────────────────────────
 
-function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfter, fixesApplied }: {
+function SafeToShipReport({
+  onClose, theme, projectName, repoUrl, scanTimeISO, filesScanned,
+  risks, gates, scoreBefore, scoreAfter, fixesApplied,
+  statusLabel, statusColor, isSample,
+}: {
   onClose: () => void;
   theme: string;
+  projectName: string;
+  repoUrl: string | null;
+  scanTimeISO: string;
+  filesScanned: string[];
   risks: Risk[];
   gates: SafetyGate[];
   scoreBefore: number;
   scoreAfter: number;
   fixesApplied: boolean;
+  statusLabel: string;
+  statusColor: string;
+  isSample: boolean;
 }) {
   const dark = theme !== "light";
   const cardBg = dark ? "rgba(18,24,36,0.98)" : "#FFFFFF";
@@ -589,10 +865,89 @@ function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfte
   const border = dark ? "1px solid rgba(196,154,71,0.25)" : "1px solid rgba(28,44,69,0.12)";
   const divider = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.08)";
 
-  const status = fixesApplied ? "READY TO SHIP" : "BLOCKED";
-  const statusColor = fixesApplied ? "#6EE7B7" : "#FCA5A5";
   const criticalBlockers = risks.filter(r => r.severity === "critical");
-  const scanTime = new Date().toLocaleString();
+  const scanTime = new Date(scanTimeISO).toLocaleString();
+  const slug = projectName.replace(/[^A-Za-z0-9._-]+/g, "_") || "scan";
+
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  function buildSummary(): string {
+    const lines: string[] = [
+      `RepoGuard — Safe-to-Ship Report`,
+      `Project:   ${projectName}${repoUrl ? `  (${repoUrl})` : ""}`,
+      `Scan time: ${scanTime}`,
+      `Status:    ${statusLabel}`,
+      `Integrity: ${scoreBefore}% → ${scoreAfter}%${fixesApplied ? "  [post-fix]" : ""}`,
+      `Files scanned: ${filesScanned.length || "—"}`,
+      ``,
+      `Findings (${risks.length}):`,
+    ];
+    if (risks.length === 0) lines.push("  (none)");
+    risks.forEach(r => {
+      lines.push(`  [${r.severity.toUpperCase()}] ${r.category} · ${r.file}`);
+      lines.push(`      ${r.shortExplanation}`);
+    });
+    lines.push("");
+    lines.push("Checklist:");
+    gates.forEach(g => {
+      lines.push(`  ${g.state.toUpperCase().padEnd(8)} ${g.label}${g.detail ? `  — ${g.detail}` : ""}`);
+    });
+    return lines.join("\n");
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(buildSummary());
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("failed");
+      window.setTimeout(() => setCopyState("idle"), 2000);
+    }
+  }
+
+  function downloadBlob(content: string, mime: string, filename: string) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDownloadJSON() {
+    const payload = {
+      project: projectName,
+      repoUrl,
+      scanTime: scanTimeISO,
+      sample: isSample,
+      score: { before: scoreBefore, after: scoreAfter, postFix: fixesApplied },
+      status: statusLabel,
+      filesScanned,
+      findings: risks,
+      checklist: gates,
+    };
+    downloadBlob(JSON.stringify(payload, null, 2), "application/json",
+      `repoguard-${slug}.json`);
+  }
+
+  function csvEscape(s: unknown): string {
+    const v = String(s ?? "");
+    return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  }
+
+  function handleDownloadCSV() {
+    const header = ["severity", "category", "file", "title", "what_broke", "why_matters", "how_to_fix"];
+    const rows = risks.map(r => [
+      r.severity, r.category, r.file, r.shortExplanation,
+      r.whatBroke, r.whyMatters, r.howToFix,
+    ].map(csvEscape).join(","));
+    const csv = [header.join(","), ...rows].join("\n");
+    downloadBlob(csv, "text/csv;charset=utf-8;", `repoguard-${slug}.csv`);
+  }
 
   const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
@@ -614,14 +969,21 @@ function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfte
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 6, gap: 12, flexWrap: "wrap" }}>
-          <div>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
               textTransform: "uppercase" }}>
-              Safe-to-Ship Report
+              Safe-to-Ship Report{isSample && " · Sample"}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2 }}>
-              {PROJECT_NAME}
+            <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2,
+              overflow: "hidden", textOverflow: "ellipsis" }}>
+              {projectName}
             </div>
+            {repoUrl && (
+              <a href={repoUrl} target="_blank" rel="noopener noreferrer" style={{
+                fontSize: 11.5, color: "#C49A47", fontFamily: "monospace",
+                textDecoration: "none", wordBreak: "break-all",
+              }}>{repoUrl}</a>
+            )}
           </div>
           <button onClick={onClose} style={{
             border: "none", background: dark ? "rgba(255,255,255,0.08)" : "rgba(28,44,69,0.07)",
@@ -633,11 +995,14 @@ function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfte
         <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 12, color: sub }}>Scan time: <b style={{ color: text }}>{scanTime}</b></span>
           <span style={{ fontSize: 12, color: sub }}>Integrity: <b style={{ color: "#C49A47" }}>{scoreBefore}% → {scoreAfter}%</b></span>
+          {filesScanned.length > 0 && (
+            <span style={{ fontSize: 12, color: sub }}>Files: <b style={{ color: text }}>{filesScanned.length}</b></span>
+          )}
           <span style={{
             padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800,
             letterSpacing: "0.08em", background: `${statusColor}20`,
             border: `1px solid ${statusColor}66`, color: statusColor,
-          }}>{status}</span>
+          }}>{statusLabel}</span>
         </div>
 
         {/* Critical blockers */}
@@ -725,8 +1090,20 @@ function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfte
           })}
         </div>
 
-        {/* Footer actions */}
-        <div style={{ marginTop: 22, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        {/* Footer actions — exports + close */}
+        <div style={{ marginTop: 22, display: "flex", justifyContent: "space-between",
+          gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={handleCopy} style={ghostBtnStyle(dark, text)}>
+              {copyState === "copied" ? "✓ Copied" : copyState === "failed" ? "✕ Copy failed" : "📋 Copy Summary"}
+            </button>
+            <button onClick={handleDownloadJSON} style={ghostBtnStyle(dark, text)}>
+              ⬇ Download JSON
+            </button>
+            <button onClick={handleDownloadCSV} style={ghostBtnStyle(dark, text)}>
+              ⬇ Download CSV
+            </button>
+          </div>
           <button onClick={onClose} style={{
             background: "#C49A47", color: "#111", border: "none", borderRadius: 12,
             padding: "12px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer",
@@ -736,4 +1113,14 @@ function SafeToShipReport({ onClose, theme, risks, gates, scoreBefore, scoreAfte
       </div>
     </div>
   );
+}
+
+function ghostBtnStyle(dark: boolean, text: string): React.CSSProperties {
+  return {
+    background: dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
+    border: `1px solid ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.12)"}`,
+    color: text, borderRadius: 10,
+    padding: "10px 14px", fontWeight: 700, fontSize: 12.5,
+    cursor: "pointer", fontFamily: "inherit",
+  };
 }
