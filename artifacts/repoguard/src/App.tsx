@@ -1209,14 +1209,15 @@ export default function App() {
         minHeight: "100dvh", background: shellBg, color: shellText,
         fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px",
       }}>
-        <div style={{
+        <div className="wr-public-topbar" style={{
           display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "16px 22px", borderBottom: dark
+          gap: 10, flexWrap: "wrap",
+          borderBottom: dark
             ? "1px solid rgba(255,255,255,0.06)"
             : "1px solid rgba(28,44,69,0.06)",
           marginBottom: 18,
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flexWrap: "wrap" }}>
             <span style={{
               fontSize: 14, fontWeight: 800, color: "#C49A47", letterSpacing: "0.10em",
             }}>REPOGUARD</span>
@@ -1233,14 +1234,23 @@ export default function App() {
               color: dark ? "rgba(255,255,255,0.75)" : "rgba(28,44,69,0.75)",
               borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
               fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+              flexShrink: 0,
             }}
           >
             Sign in →
           </button>
         </div>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 18px" }}>
+        <div className="wr-public-shell" style={{ maxWidth: 1100, margin: "0 auto" }}>
           <WarRoom theme={theme} />
         </div>
+        <style>{`
+          .wr-public-shell { padding: 0 18px; }
+          @media (max-width: 600px) { .wr-public-shell { padding: 0 12px; } }
+          @media (max-width: 400px) { .wr-public-shell { padding: 0 10px; } }
+          .wr-public-topbar { padding: 16px 22px; }
+          @media (max-width: 600px) { .wr-public-topbar { padding: 12px 14px; } }
+          @media (max-width: 400px) { .wr-public-topbar { padding: 10px 12px; } }
+        `}</style>
       </div>
     );
   }

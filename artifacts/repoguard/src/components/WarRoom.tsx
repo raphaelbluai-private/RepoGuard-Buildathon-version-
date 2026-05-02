@@ -249,8 +249,11 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
 
   const Card: React.FC<{ children: React.ReactNode; padding?: string; style?: React.CSSProperties }> = ({ children, padding = "16px 18px", style }) => (
-    <div className="relative overflow-hidden" style={{
+    <div className="relative overflow-hidden wr-card-body" style={{
       background: cardBg, border: cardBorder, borderRadius: 16, padding,
+      // minWidth: 0 prevents this card from being forced wider than its
+      // parent grid track by long inline content (file paths, URLs, etc.).
+      minWidth: 0,
       backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
       boxShadow: dark ? "0 4px 20px rgba(0,0,0,0.30)" : "0 4px 20px rgba(28,44,69,0.06)",
       ...style,
@@ -277,11 +280,19 @@ export default function WarRoom({ theme }: WarRoomProps) {
           from { opacity: 0.3; transform: scale(0.92); }
           to   { opacity: 1;   transform: scale(1); }
         }
-        .wr-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        .wr-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        /* minmax(0, 1fr) lets grid items SHRINK below their intrinsic
+           min content width; without it, long text inside a tile forces
+           the column wider than the viewport on mobile. */
+        .wr-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .wr-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
         @media (max-width: 700px) {
-          .wr-grid-3 { grid-template-columns: 1fr 1fr; }
-          .wr-grid-2 { grid-template-columns: 1fr; }
+          .wr-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .wr-grid-2 { grid-template-columns: minmax(0, 1fr); }
+        }
+        /* Phones: collapse the dashboard tiles to a single column so the
+           long "Top Blocker" / "Risk Mix" copy can wrap instead of overflowing. */
+        @media (max-width: 460px) {
+          .wr-grid-3 { grid-template-columns: minmax(0, 1fr); }
         }
         .wr-cta {
           background: linear-gradient(135deg, #C49A47 0%, #a87d2e 100%);
@@ -308,11 +319,32 @@ export default function WarRoom({ theme }: WarRoomProps) {
           transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
         }
         .wr-risk-card:hover { transform: translateY(-2px); }
+
+        /* Mobile sizing — tighten paddings, scale headline, allow long
+           file paths / inline code to break instead of forcing overflow. */
+        .wr-hero { padding: 26px 24px 24px; }
+        .wr-hero-headline { font-size: 26px; }
+        @media (max-width: 600px) {
+          .wr-hero { padding: 18px 16px 16px; }
+          .wr-hero-headline { font-size: 22px; }
+        }
+        @media (max-width: 400px) {
+          .wr-hero { padding: 16px 14px 14px; }
+          .wr-hero-headline { font-size: 20px; }
+        }
+        /* Force any inline code / long path / URL to wrap on phones. */
+        @media (max-width: 600px) {
+          .wr-card-body code,
+          .wr-card-body a {
+            word-break: break-all;
+            overflow-wrap: anywhere;
+          }
+        }
       `}</style>
 
       {/* ── Hero header ──────────────────────────────────────────────────── */}
-      <div style={{
-        marginBottom: 14, padding: "26px 24px 24px", borderRadius: 18,
+      <div className="wr-hero" style={{
+        marginBottom: 14, borderRadius: 18,
         background: dark
           ? "linear-gradient(135deg, rgba(196,154,71,0.12) 0%, rgba(28,44,69,0.55) 100%)"
           : "linear-gradient(135deg, rgba(196,154,71,0.18) 0%, rgba(255,255,255,0.85) 100%)",
@@ -325,8 +357,8 @@ export default function WarRoom({ theme }: WarRoomProps) {
         }}>
           RepoGuard War Room
         </div>
-        <div style={{
-          fontSize: 26, fontWeight: 800, color: text, lineHeight: 1.15,
+        <div className="wr-hero-headline" style={{
+          fontWeight: 800, color: text, lineHeight: 1.15,
           letterSpacing: "-0.01em", marginBottom: 8,
         }}>
           Agent-Built Safety Layer for AI Apps
@@ -545,13 +577,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
             border: "1px solid rgba(196,154,71,0.30)",
             animation: "wrPopIn 240ms ease both",
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start",
               marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#C49A47", letterSpacing: "0.04em" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#C49A47", letterSpacing: "0.04em",
+                minWidth: 0, flex: "1 1 200px", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {selectedRisk.category} · {selectedRisk.file}
               </div>
               <button className="wr-ghost-btn" onClick={() => setSelectedRiskId(null)}
-                style={{ padding: "5px 10px", fontSize: 12 }}>✕ Close</button>
+                style={{ padding: "5px 10px", fontSize: 12, flexShrink: 0 }}>✕ Close</button>
             </div>
 
             <DetailRow label="What broke"     body={selectedRisk.whatBroke}  theme={theme} />
@@ -711,6 +744,9 @@ function Tile({ label, value, accent, theme, small }: {
   return (
     <div style={{
       padding: "12px 14px", borderRadius: 12,
+      // minWidth: 0 lets this tile shrink inside a CSS grid track without
+      // being forced wider by its own content (the "Top Blocker" copy).
+      minWidth: 0,
       background: dark ? "rgba(255,255,255,0.04)" : "rgba(28,44,69,0.05)",
       border: dark ? "1px solid rgba(255,255,255,0.07)" : "1px solid rgba(28,44,69,0.08)",
     }}>
@@ -718,9 +754,13 @@ function Tile({ label, value, accent, theme, small }: {
         fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
         {label}
       </div>
-      <div style={{ fontSize: small ? 13 : 18, fontWeight: 800, color: accent,
+      <div style={{
+        fontSize: small ? 13 : 18, fontWeight: 800, color: accent,
         lineHeight: 1.25, overflow: "hidden", textOverflow: "ellipsis",
-        ...(small ? { whiteSpace: "nowrap" as const } : {}) }}>
+        // Allow wrapping even on "small" tiles so phrases like
+        // "3 high · 0 med · 0 low" don't punch out of the tile.
+        wordBreak: "break-word", overflowWrap: "anywhere",
+      }}>
         {value}
       </div>
     </div>
@@ -1059,12 +1099,40 @@ function SafeToShipReport({
       display: "grid", placeItems: "center", zIndex: 1100, padding: 16,
       overflowY: "auto", animation: "wrFadeIn 220ms ease both",
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div onClick={e => e.stopPropagation()} className="wr-report-modal" style={{
         width: "100%", maxWidth: 720, background: cardBg, color: text,
-        borderRadius: 18, padding: "24px 24px 28px",
+        borderRadius: 18,
         border, boxShadow: "0 28px 80px rgba(0,0,0,0.45)",
         margin: "auto", maxHeight: "92vh", overflowY: "auto",
+        // minWidth: 0 lets long file paths wrap inside the modal instead
+        // of pushing the modal wider than its column.
+        minWidth: 0,
       }}>
+        <style>{`
+          .wr-report-modal { padding: 24px 24px 28px; }
+          @media (max-width: 600px) {
+            .wr-report-modal { padding: 18px 16px 22px; border-radius: 14px; }
+          }
+          /* Risk Summary / Checklist rows: on phones, stack the file path
+             beneath the category so the row never has to be wider than the
+             modal. The severity badge keeps its place on the right. */
+          .wr-modal-row {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 10px; align-items: center;
+          }
+          @media (max-width: 540px) {
+            .wr-modal-row {
+              grid-template-columns: minmax(0, 1fr) auto;
+              row-gap: 4px;
+            }
+            .wr-modal-row > .wr-modal-row-mid {
+              grid-column: 1 / -1;
+              white-space: normal !important;
+              word-break: break-all;
+            }
+          }
+        `}</style>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 6, gap: 12, flexWrap: "wrap" }}>
@@ -1109,10 +1177,12 @@ function SafeToShipReport({
         {criticalBlockers.length === 0 || fixesApplied ? (
           <div style={{ fontSize: 13.5, color: sub }}>None — no critical risks remaining.</div>
         ) : (
-          <ul style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7 }}>
+          <ul style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7,
+            wordBreak: "break-word", overflowWrap: "anywhere" }}>
             {criticalBlockers.map(r => (
               <li key={r.id}>
-                <b>{r.category}</b> · <span style={{ fontFamily: "monospace", color: sub }}>{r.file}</span> — {r.shortExplanation}
+                <b>{r.category}</b> · <span style={{ fontFamily: "monospace", color: sub,
+                  wordBreak: "break-all", overflowWrap: "anywhere" }}>{r.file}</span> — {r.shortExplanation}
               </li>
             ))}
           </ul>
@@ -1125,15 +1195,14 @@ function SafeToShipReport({
             const sev = SEVERITY_COLOR[r.severity];
             const resolved = fixesApplied;
             return (
-              <div key={r.id} style={{
-                display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, alignItems: "center",
+              <div key={r.id} className="wr-modal-row" style={{
                 padding: "8px 12px", borderRadius: 10,
                 background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
                 borderLeft: `3px solid ${resolved ? "#6EE7B7" : sev}`,
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{r.category}</span>
-                <span style={{ fontSize: 12, color: sub, fontFamily: "monospace",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span className="wr-modal-row-mid" style={{ fontSize: 12, color: sub, fontFamily: "monospace",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                   {r.file}
                 </span>
                 <span style={{
@@ -1153,11 +1222,14 @@ function SafeToShipReport({
         <SectionTitle>Recommended Fixes</SectionTitle>
         <div style={{ display: "grid", gap: 10 }}>
           {risks.map(r => (
-            <div key={r.id} style={{ paddingTop: 8, borderTop: `1px solid ${divider}` }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>
-                {r.category} — <span style={{ fontFamily: "monospace", color: sub, fontWeight: 500 }}>{r.file}</span>
+            <div key={r.id} style={{ paddingTop: 8, borderTop: `1px solid ${divider}`, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700,
+                wordBreak: "break-word", overflowWrap: "anywhere" }}>
+                {r.category} — <span style={{ fontFamily: "monospace", color: sub, fontWeight: 500,
+                  wordBreak: "break-all", overflowWrap: "anywhere" }}>{r.file}</span>
               </div>
-              <ol style={{ margin: "6px 0 0", paddingLeft: 20, color: sub, fontSize: 12.5, lineHeight: 1.6 }}>
+              <ol style={{ margin: "6px 0 0", paddingLeft: 20, color: sub, fontSize: 12.5, lineHeight: 1.6,
+                wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {r.fixPlan.map((s, i) => <li key={i}>{s}</li>)}
               </ol>
             </div>
@@ -1170,8 +1242,7 @@ function SafeToShipReport({
           {gates.map(g => {
             const c = GATE_COLOR[g.state];
             return (
-              <div key={g.id} style={{
-                display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, alignItems: "center",
+              <div key={g.id} className="wr-modal-row" style={{
                 padding: "7px 12px", borderRadius: 10,
                 background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
               }}>
@@ -1181,7 +1252,8 @@ function SafeToShipReport({
                   color: c, fontWeight: 800, fontSize: 12,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>{GATE_ICON[g.state]}</span>
-                <span style={{ fontSize: 13 }}>{g.label}</span>
+                <span className="wr-modal-row-mid" style={{ fontSize: 13, minWidth: 0,
+                  overflowWrap: "anywhere" }}>{g.label}</span>
                 <span style={{ fontSize: 11, fontWeight: 800, color: c, letterSpacing: "0.06em",
                   textTransform: "uppercase" }}>{g.state}</span>
               </div>
