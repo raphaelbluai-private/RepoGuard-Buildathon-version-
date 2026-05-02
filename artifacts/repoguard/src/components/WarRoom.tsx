@@ -135,13 +135,15 @@ export default function WarRoom({ theme }: WarRoomProps) {
             >
               {demoRun ? "Re-run Demo Scan" : "Run Demo Scan"}
             </button>
-            <button
-              className="wr-ghost-btn"
-              onClick={() => setFixesApplied(v => !v)}
-              disabled={!demoRun}
-            >
-              {fixesApplied ? "Revert Fixes" : "Apply Fix Plan"}
-            </button>
+            {fixesApplied && (
+              <button
+                className="wr-ghost-btn"
+                onClick={() => { setFixesApplied(false); setSelectedRiskId(null); }}
+                title="Revert fixes to show the unsafe state again"
+              >
+                ↻ Reset Fixes
+              </button>
+            )}
           </div>
         </div>
 
@@ -236,15 +238,38 @@ export default function WarRoom({ theme }: WarRoomProps) {
             <DetailRow label="How to fix"     body={selectedRisk.howToFix}   theme={theme} />
 
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${divider}` }}>
-              <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
-                textTransform: "uppercase", marginBottom: 10 }}>
-                Deterministic Fix Plan
-              </div>
-              <ol style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7 }}>
-                {selectedRisk.fixPlan.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ol>
+              {!fixesApplied ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+                  <button className="wr-cta" onClick={() => setFixesApplied(true)}>
+                    ✦ Generate Fix Plan
+                  </button>
+                  <div style={{ fontSize: 12, color: subText, lineHeight: 1.5 }}>
+                    Generates the deterministic fix plan for this risk and updates the
+                    Safe-to-Ship Checklist + Integrity Score.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ animation: "wrPopIn 240ms ease both" }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+                    fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
+                    textTransform: "uppercase",
+                  }}>
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      width: 18, height: 18, borderRadius: "50%",
+                      background: "rgba(110,231,183,0.20)", border: "1px solid rgba(110,231,183,0.55)",
+                      color: "#6EE7B7", fontSize: 11, fontWeight: 800,
+                    }}>✓</span>
+                    Deterministic Fix Plan · Applied
+                  </div>
+                  <ol style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7 }}>
+                    {selectedRisk.fixPlan.map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </div>
           </div>
         )}
