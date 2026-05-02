@@ -32,16 +32,90 @@ type ScanMode =
   | { kind: "sample" }
   | { kind: "error"; error: string; message: string };
 
+const WAR_ROOM_STORAGE_KEY = "repoguard.warRoom.v2";
+
+type PersistedWarRoomState = {
+  scanMode: ScanMode;
+  fixesApplied: boolean;
+  selectedRiskId: string | null;
+  statusOverrides: Record<string, RiskStatus>;
+  repoInput: string;
+};
+
+function loadPersistedState(): PersistedWarRoomState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(WAR_ROOM_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    // Only restore terminal scan modes ("sample" or "real"). The transient
+    // "scanning" and "error" states are not worth replaying after a refresh.
+    let scanMode: ScanMode = { kind: "idle" };
+    const sm = parsed.scanMode;
+    if (sm && typeof sm === "object" && typeof sm.kind === "string") {
+      if (sm.kind === "sample") {
+        scanMode = { kind: "sample" };
+      } else if (sm.kind === "real" && sm.data && typeof sm.data === "object") {
+        scanMode = { kind: "real", data: sm.data as ScanResult };
+      }
+    }
+
+    return {
+      scanMode,
+      fixesApplied: Boolean(parsed.fixesApplied),
+      selectedRiskId:
+        typeof parsed.selectedRiskId === "string" ? parsed.selectedRiskId : null,
+      statusOverrides:
+        parsed.statusOverrides && typeof parsed.statusOverrides === "object"
+          ? (parsed.statusOverrides as Record<string, RiskStatus>)
+          : {},
+      repoInput: typeof parsed.repoInput === "string" ? parsed.repoInput : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
-  const [scanMode, setScanMode] = useState<ScanMode>({ kind: "idle" });
-  const [fixesApplied, setFixesApplied] = useState(false);
-  const [selectedRiskId, setSelectedRiskId] = useState<string | null>(null);
+  const persisted = loadPersistedState();
+  const [scanMode, setScanMode] = useState<ScanMode>(
+    persisted?.scanMode ?? { kind: "idle" },
+  );
+  const [fixesApplied, setFixesApplied] = useState(persisted?.fixesApplied ?? false);
+  const [selectedRiskId, setSelectedRiskId] = useState<string | null>(
+    persisted?.selectedRiskId ?? null,
+  );
   const [reportOpen, setReportOpen] = useState(false);
-  const [repoInput, setRepoInput] = useState("");
+  const [repoInput, setRepoInput] = useState(persisted?.repoInput ?? "");
   // User-driven status overrides per finding id. Backend always emits "open";
   // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>({});
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>(
+    persisted?.statusOverrides ?? {},
+  );
+
+  // Persist War Room state across page refreshes so the last scan, fix-applied
+  // status, selected risk, and triage overrides survive a reload. Transient
+  // states ("scanning", "error") are filtered out on load.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        WAR_ROOM_STORAGE_KEY,
+        JSON.stringify({
+          scanMode,
+          fixesApplied,
+          selectedRiskId,
+          statusOverrides,
+          repoInput,
+        }),
+      );
+    } catch {
+      // ignore storage errors (quota, private mode, etc.)
+    }
+  }, [scanMode, fixesApplied, selectedRiskId, statusOverrides, repoInput]);
 
   function setRiskStatus(id: string, s: RiskStatus) {
     setStatusOverrides(prev => ({ ...prev, [id]: s }));
@@ -215,6 +289,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
     setSelectedRiskId(null);
     setRepoInput("");
     setStatusOverrides({});
+    setReportOpen(false);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(WAR_ROOM_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   // Deep-link support: ?repo=owner/repo (or full URL) auto-runs a real scan
