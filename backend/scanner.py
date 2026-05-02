@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import json
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -143,6 +144,22 @@ def _fetch_file(owner: str, repo: str, path: str, ref: str):
         return base64.b64decode(raw).decode("utf-8", errors="replace")
     except Exception:
         return None
+
+
+def _safe_fetch(owner: str, repo: str, path: str, ref: str):
+    """Thread-safe wrapper used by the parallel fan-out.
+
+    Returns:
+      - the file's text content on success
+      - None if the file is missing or the fetch failed in a non-rate-limit way
+      - the string "RATE_LIMIT" sentinel if GitHub returned a rate-limit
+        signal (we can't raise across thread boundaries cleanly with
+        executor.map, so the caller checks the sentinel)
+    """
+    try:
+        return _fetch_file(owner, repo, path, ref)
+    except GitHubRateLimited:
+        return "RATE_LIMIT"
 
 
 def _list_workflows(owner: str, repo: str, ref: str):
@@ -625,18 +642,46 @@ def scan_repo(repo_input: str) -> dict[str, Any]:
 
     file_map: dict[str, str] = {}
     files_seen: list[str] = []
+
+    # Fetch core files in parallel. Each request still has TIMEOUT (8s) so a
+    # single hung path can't stall the whole scan; bounded concurrency keeps
+    # us well under GitHub's per-IP burst budget. Results are written into
+    # file_map in the same order they're returned, but downstream checks are
+    # order-independent so this stays deterministic.
     try:
-        for path in CORE_FILES:
-            c = _fetch_file(owner, repo, path, default_branch)
-            if c is not None:
-                file_map[path] = c
+        rate_limited = False
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(
+                lambda p: (p, _safe_fetch(owner, repo, p, default_branch)),
+                CORE_FILES,
+            ))
+        for path, outcome in results:
+            if outcome == "RATE_LIMIT":
+                rate_limited = True
+                break
+            if outcome is not None:
+                file_map[path] = outcome  # type: ignore[assignment]
                 files_seen.append(path)
 
-        for wf_path in _list_workflows(owner, repo, default_branch):
-            c = _fetch_file(owner, repo, wf_path, default_branch)
-            if c is not None:
-                file_map[wf_path] = c
-                files_seen.append(wf_path)
+        if rate_limited:
+            raise GitHubRateLimited()
+
+        # Workflow listing is one extra request; do it serially since we need
+        # the list before we can fan out the per-file fetches. Then fan those
+        # out in parallel as well.
+        wf_paths = _list_workflows(owner, repo, default_branch)
+        if wf_paths:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                wf_results = list(pool.map(
+                    lambda p: (p, _safe_fetch(owner, repo, p, default_branch)),
+                    wf_paths,
+                ))
+            for path, outcome in wf_results:
+                if outcome == "RATE_LIMIT":
+                    raise GitHubRateLimited()
+                if outcome is not None:
+                    file_map[path] = outcome  # type: ignore[assignment]
+                    files_seen.append(path)
     except GitHubRateLimited:
         return {
             "ok": False,

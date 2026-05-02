@@ -204,11 +204,20 @@ export default function WarRoom({ theme }: WarRoomProps) {
     setScanMode({ kind: "scanning", repo: trimmed });
     setFixesApplied(false);
     setSelectedRiskId(null);
+
+    // Defensive watchdog: if the fetch never resolves (proxy hang, sleep,
+    // dropped connection) the UI must not be stuck in "scanning" forever.
+    // After 25s we abort the request, which forces the catch block to flip
+    // scanMode to "error" so the Scan Public Repo button re-enables.
+    const ac = new AbortController();
+    const watchdog = window.setTimeout(() => ac.abort(), 25000);
+
     try {
       const r = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: trimmed }),
+        signal: ac.signal,
       });
 
       // Parse JSON defensively — server may return HTML on a proxy hiccup.
@@ -268,12 +277,17 @@ export default function WarRoom({ theme }: WarRoomProps) {
           message: typeof body.message === "string" ? body.message : "The scan could not be completed.",
         });
       }
-    } catch {
+    } catch (e: any) {
+      const aborted = e?.name === "AbortError";
       setScanMode({
         kind: "error",
-        error: "NETWORK_ERROR",
-        message: "Could not reach the scanner. Check your network or try the sample scan.",
+        error: aborted ? "TIMEOUT" : "NETWORK_ERROR",
+        message: aborted
+          ? "Scan took longer than 25s and was cancelled. Try again or use the sample scan."
+          : "Could not reach the scanner. Check your network or try the sample scan.",
       });
+    } finally {
+      window.clearTimeout(watchdog);
     }
   }
 

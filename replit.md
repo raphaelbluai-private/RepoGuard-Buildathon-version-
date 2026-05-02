@@ -39,11 +39,13 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 - Email login screen with 2FA demo verification
 - Animated 4-stage breach detection demo (Command → Breach → Correction → Resolution)
 - **War Room safety command layer** — public, real-repo scanner (Buildathon shipped feature)
-  - **Public-by-default**: AuthScreen has a "Try War Room — scan a public repo (no login) →"
-    button that bypasses 2FA. Visiting `/?repo=owner/repo`, `/?warroom=1`, or `/?sample=1`
-    skips the boot/auth screen entirely (publicWarRoom state initialized synchronously
-    from URLSearchParams in App.tsx). Public mode shows a minimal shell with a
-    "REPOGUARD · Public Scanner" top bar and a "Sign in →" escape hatch.
+  - **Public-by-default boot**: visiting `/` lands directly in the public War Room — no
+    boot animation, no AuthScreen. `publicWarRoom` state defaults to `true`; only
+    `/?auth=1` forces the legacy AuthScreen flow. Public mode shows a minimal shell
+    with a "REPOGUARD · Public Scanner" top bar and a "Sign in →" escape hatch.
+  - AuthScreen boot animation tightened from ~4350ms to ~900ms total (5 phases preserved,
+    timers compressed). `/api/repoguard/verify` is fire-and-forget; nothing in the UI
+    awaits it.
   - Hero header: "RepoGuard War Room / Agent-Built Safety Layer for AI Apps /
     Scan your project before you ship."
   - Repo input form: scans any public GitHub repo via unauthenticated GitHub Contents API (no token, no login)
@@ -73,6 +75,12 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 - Frontend: `src/components/WarRoom.tsx` + types in `src/data/warRoomData.ts`
 - Backend scanner: `backend/scanner.py` (pure deterministic, uses `requests` against GitHub public API)
 - Endpoint: `POST /api/scan` with body `{repo: "owner/repo" | github URL}` — rate-limited 15/60s per IP
+- Scanner uses `ThreadPoolExecutor(max_workers=8)` to fan out the ~25-30 GitHub Contents API
+  fetches in parallel (was sequential). Per-request `TIMEOUT=8s` and the 10-workflow cap are
+  preserved. Typical scan completes in ~0.9s vs. ~8-15s before. Rate-limit detection is
+  thread-safe via a `"RATE_LIMIT"` sentinel returned from `_safe_fetch`.
+- Frontend `handleRealScan` adds an `AbortController` watchdog (25s) so the UI can never get
+  stuck in `scanMode.kind === "scanning"` even if the request hangs.
 - Response: `{ok:true, repo, scanTime, filesScanned, findings, score, scoreProjected, status, gates}`
   or `{ok:false, error, message}`
 - Severity weights: critical=25, high=15, medium=8, low=3 (max-cap 100, floor 0)

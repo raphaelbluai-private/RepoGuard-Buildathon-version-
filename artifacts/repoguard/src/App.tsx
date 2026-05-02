@@ -518,24 +518,25 @@ function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
     const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
     (async () => {
-      // booting → verifying
-      await wait(500);
+      // Tightened boot animation: total ~900ms (was 4350ms) so even users
+      // who land on AuthScreen via the "Sign in" button get to the login
+      // form in well under 1s. The animation is preserved, just compressed.
+      // /api/repoguard/verify is intentionally non-blocking — it fires for
+      // telemetry only; nothing in the UI awaits it.
+      await wait(150);
       if (!alive) return;
       setBootPhase("verifying");
 
-      // Run API verify in background; guarantee at least 2200ms in verifying
       fetch("/api/repoguard/verify").catch(() => null);
-      await wait(2200);
+      await wait(450);
       if (!alive) return;
       setBootPhase("secure");
 
-      // Show secure confirmation briefly
-      await wait(1000);
+      await wait(180);
       if (!alive) return;
       setBootPhase("handoff");
 
-      // Handoff animation plays out
-      await wait(650);
+      await wait(120);
       if (!alive) return;
       setBootPhase("login");
     })();
@@ -1044,17 +1045,23 @@ export default function App() {
   const [animatingScore, setAnimatingScore] = useState(72);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState("");
-  // Deep-link / share-link bypass: any visitor hitting "/?repo=..." or
-  // "/?warroom=1" or "/?sample=1" lands directly in the public War Room
-  // — no boot animation, no Sign In screen. This makes scan URLs shareable
-  // and is what judges/visitors will see when given a link.
+  // Default-to-public boot: every visitor lands directly in the War Room
+  // public shell — no boot animation, no AuthScreen — so first usable UI is
+  // sub-second. Operators can still reach the protected flow at any time
+  // via the "Sign in →" button in the public top bar (which calls
+  // setPublicWarRoom(false)) or by visiting "/?auth=1" to skip straight to
+  // the AuthScreen. Deep-links like "/?repo=..." also keep working.
   const [publicWarRoom, setPublicWarRoom] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") return true;
     try {
       const p = new URLSearchParams(window.location.search);
-      return !!(p.get("repo") || p.get("warroom") === "1" || p.get("sample") === "1");
+      // Explicit auth bypass — operators / legacy demo flow.
+      if (p.get("auth") === "1") return false;
+      // Everything else (including "/", "/?repo=...", "/?sample=1",
+      // "/?warroom=1") goes straight into the public War Room.
+      return true;
     } catch {
-      return false;
+      return true;
     }
   });
   const [settings, setSettings] = useState<any>(() => {
@@ -1137,12 +1144,23 @@ export default function App() {
     warmAudio();
     haptic(settings.haptics, 18);
 
-    // Phase 1 — set breach in backend, jump to Breach page
-    await fetch("/api/demo-trigger", { method: "POST" });
-    await refreshState();
+    // Phase 1 — OPTIMISTIC UI: jump to Breach page and play alert
+    // immediately. The backend POST + state refresh run in the background
+    // so the user sees feedback in <16ms instead of waiting for the
+    // round-trip. The Breach page renders from the page-driven
+    // displayStatus override, so it does not need backend state to look
+    // correct.
     setPage("Breach");
     playAlert(settings.sound);
     haptic(settings.haptics, [30, 20, 30, 20, 30]);
+
+    // Fire-and-forget the backend update; reconcile state when it returns.
+    void (async () => {
+      try {
+        await fetch("/api/demo-trigger", { method: "POST" });
+        await refreshState();
+      } catch { /* polling will catch up */ }
+    })();
 
     // Phase 2 — Correction page after 4 s
     setTimeout(() => {
@@ -1151,13 +1169,17 @@ export default function App() {
       haptic(settingsRef.current.haptics, 18);
     }, 4000);
 
-    // Phase 3 — Resolve backend, jump to Resolution page after 8 s
-    setTimeout(async () => {
-      await fetch("/api/demo-resolve", { method: "POST" });
-      await refreshState();
+    // Phase 3 — Resolve backend (background), jump to Resolution page after 8 s
+    setTimeout(() => {
       setPage("Resolution");
       playTing(settingsRef.current.sound);
       haptic(settingsRef.current.haptics, [10, 30, 10]);
+      void (async () => {
+        try {
+          await fetch("/api/demo-resolve", { method: "POST" });
+          await refreshState();
+        } catch { /* polling will catch up */ }
+      })();
     }, 8000);
   };
 
