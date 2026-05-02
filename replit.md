@@ -38,10 +38,23 @@ REPOGUARD is a full-stack security monitoring demo application. It features an a
 
 - Email login screen with 2FA demo verification
 - Animated 4-stage breach detection demo (Command → Breach → Correction → Resolution)
+- **War Room safety command layer** — buildathon upgrade page (additive, no backend dependency)
+  - Command Dashboard, Before/After Integrity Score, Risk Detection Panel
+  - What Broke / Why / How to Fix drill-down + deterministic Fix Plan Generator
+  - Safe-to-Ship Checklist (7 gates), Agent Build Trace timeline, Buildathon Evidence
+  - Safe-to-Ship Report modal with project/scan/integrity/blockers/risks/fixes/checklist
+  - Demo Mode: 5 deterministic seeded risks across 5 categories, score 38 → 96
 - Live event feed
 - Compliance score before/after display
 - Repository status board
 - Settings modal with: dark/light mode, sound on/off, haptics on/off
+
+## War Room Implementation Notes
+
+- New page registered as `"War Room"` in `pages` array (App.tsx); slot in `pageContent` map
+- Self-contained: `src/components/WarRoom.tsx` + `src/data/warRoomData.ts`
+- No backend calls; all data deterministic for buildathon demo
+- Rest of app (Command/Breach/Correction/Resolution + scanner) is untouched
 
 ## API Endpoints
 

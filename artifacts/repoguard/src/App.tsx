@@ -3,8 +3,9 @@ import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySo
 import { useIsMobile } from "./hooks/use-mobile";
 import WarRoomFeed from "./components/WarRoomFeed";
 import RepoGuardCore, { type RGStatus } from "./components/RepoGuardCore";
+import WarRoom from "./components/WarRoom";
 
-const pages = ["Command", "Breach", "Correction", "Resolution"];
+const pages = ["Command", "War Room", "Breach", "Correction", "Resolution"];
 
 // ─── Shared AudioContext ─────────────────────────────────────────────────────
 let _ctx: AudioContext | null = null;
@@ -1387,6 +1388,8 @@ export default function App() {
         </div>
       </Panel>
     ),
+
+    "War Room": <WarRoom theme={theme} />,
   };
 
   return (
