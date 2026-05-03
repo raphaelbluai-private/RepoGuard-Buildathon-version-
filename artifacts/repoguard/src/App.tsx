@@ -3,8 +3,9 @@ import { RepositorySourcePicker, type RepoItem } from "./components/RepositorySo
 import { useIsMobile } from "./hooks/use-mobile";
 import WarRoomFeed from "./components/WarRoomFeed";
 import RepoGuardCore, { type RGStatus } from "./components/RepoGuardCore";
+import WarRoom from "./components/WarRoom";
 
-const pages = ["Command", "Breach", "Correction", "Resolution"];
+const pages = ["Command", "War Room", "Breach", "Correction", "Resolution"];
 
 // ─── Shared AudioContext ─────────────────────────────────────────────────────
 let _ctx: AudioContext | null = null;
@@ -13,7 +14,7 @@ function getCtx(): AudioContext | null {
   const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!AC) return null;
   if (!_ctx) _ctx = new AC();
-  if (_ctx.state === "suspended") _ctx.resume();
+  if (_ctx!.state === "suspended") _ctx!.resume();
   return _ctx;
 }
 
@@ -501,7 +502,7 @@ const BOOT_LINES = [
   "Loading protected interface...",
 ];
 
-function AuthScreen({ sound, haptics, onAuthenticated }: any) {
+function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
   const [email, setEmail] = useState("demo@repoguard.ai");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
@@ -517,24 +518,25 @@ function AuthScreen({ sound, haptics, onAuthenticated }: any) {
     const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
     (async () => {
-      // booting → verifying
-      await wait(500);
+      // Tightened boot animation: total ~900ms (was 4350ms) so even users
+      // who land on AuthScreen via the "Sign in" button get to the login
+      // form in well under 1s. The animation is preserved, just compressed.
+      // /api/repoguard/verify is intentionally non-blocking — it fires for
+      // telemetry only; nothing in the UI awaits it.
+      await wait(150);
       if (!alive) return;
       setBootPhase("verifying");
 
-      // Run API verify in background; guarantee at least 2200ms in verifying
       fetch("/api/repoguard/verify").catch(() => null);
-      await wait(2200);
+      await wait(450);
       if (!alive) return;
       setBootPhase("secure");
 
-      // Show secure confirmation briefly
-      await wait(1000);
+      await wait(180);
       if (!alive) return;
       setBootPhase("handoff");
 
-      // Handoff animation plays out
-      await wait(650);
+      await wait(120);
       if (!alive) return;
       setBootPhase("login");
     })();
@@ -561,36 +563,55 @@ function AuthScreen({ sound, haptics, onAuthenticated }: any) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+      let data: any = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok || !data?.sent) {
+        setError(
+          res.status === 429
+            ? "Too many requests — wait a minute and try again."
+            : "Operator login unavailable. Public War Room scanner is still available."
+        );
+        return;
+      }
       setDemoCode(data.demo_code);
       setStep("code");
       playSwoosh(sound);
     } catch {
-      setError("Connection error — is the backend running?");
+      setError("Operator login unavailable. Public War Room scanner is still available.");
     } finally { setLoading(false); }
   };
 
   const verifyCode = async () => {
-    if (!code.trim()) return;
+    const normalizedCode = code.replace(/\D/g, "");
+    if (!normalizedCode) return;
     playClick(sound);
     haptic(haptics, 10);
     setLoading(true); setError("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ email, code: normalizedCode }),
       });
-      const data = await res.json();
-      if (data.verified) {
-        playSwoosh(sound);
-        haptic(haptics, [10, 30, 10]);
+      let data: any = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        setError(
+          res.status === 429
+            ? "Too many attempts — wait a minute and try again."
+            : "Operator login unavailable. Public War Room scanner is still available."
+        );
+        return;
+      }
+      if (data?.verified) {
+        try { playSwoosh(sound); } catch { /* audio errors must not block login */ }
+        try { haptic(haptics, [10, 30, 10]); } catch { /* ignore */ }
         onAuthenticated(email);
       } else {
         setError("Incorrect code — check the code shown above.");
-        haptic(haptics, [50, 50, 50]);
+        try { haptic(haptics, [50, 50, 50]); } catch { /* ignore */ }
       }
     } catch {
-      setError("Connection error — is the backend running?");
+      setError("Operator login unavailable. Public War Room scanner is still available.");
     } finally { setLoading(false); }
   };
 
@@ -926,6 +947,37 @@ function AuthScreen({ sound, haptics, onAuthenticated }: any) {
                 }}>
                   Demo code will appear instantly
                 </div>
+
+                {/* Public War Room — no login required */}
+                <div style={{
+                  marginTop: 6, paddingTop: 14,
+                  borderTop: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", flexDirection: "column", gap: 8,
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => { playClick(sound); haptic(haptics, 8); onTryPublic && onTryPublic(); }}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid rgba(196,154,71,0.45)",
+                      color: "#C49A47",
+                      borderRadius: 12, padding: "11px 14px",
+                      fontFamily: "inherit", fontSize: 14, fontWeight: 700,
+                      letterSpacing: "0.01em", cursor: "pointer",
+                      transition: "background 120ms ease, transform 120ms ease",
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.background = "rgba(196,154,71,0.10)")}
+                    onMouseOut={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    Try War Room — scan a public repo (no login) →
+                  </button>
+                  <div style={{
+                    textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.30)",
+                    letterSpacing: "0.02em",
+                  }}>
+                    Public scanner · no GitHub token required
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ display: "grid", gap: 14 }}>
@@ -1012,6 +1064,28 @@ export default function App() {
   const [animatingScore, setAnimatingScore] = useState(72);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState("");
+  // Default-to-public boot: every visitor lands directly in the War Room
+  // public shell — no boot animation, no AuthScreen — so first usable UI is
+  // sub-second. Operators can still reach the protected flow at any time
+  // via the "Sign in →" button in the public top bar (which calls
+  // setPublicWarRoom(false)) or by visiting "/?auth=1" to skip straight to
+  // the AuthScreen. Deep-links like "/?repo=..." also keep working.
+  const [publicWarRoom, setPublicWarRoom] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const p = new URLSearchParams(window.location.search);
+      // Explicit auth bypass — operators / legacy demo flow.
+      if (p.get("auth") === "1") return false;
+      // Everything else (including "/", "/?repo=...", "/?sample=1",
+      // "/?warroom=1") goes straight into the public War Room.
+      return true;
+    } catch {
+      return true;
+    }
+  });
+  // Incrementing this key forces WarRoom to remount — used by "Reset Session"
+  // to clear persisted state from localStorage and return to the idle scan view.
+  const [warRoomKey, setWarRoomKey] = useState(0);
   const [settings, setSettings] = useState<any>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("repoguard-settings") || "");
@@ -1033,14 +1107,27 @@ export default function App() {
   }, [settings]);
 
   async function refreshState() {
-    const [evR, reR, scR, stR] = await Promise.all([
-      fetch("/api/events"), fetch("/api/repos"),
-      fetch("/api/compliance"), fetch("/api/system-status"),
-    ]);
-    setEvents(await evR.json());
-    setRepos(await reR.json());
-    setScore(await scR.json());
-    setStatus((await stR.json()).status);
+    try {
+      const safeJson = async (url: string) => {
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        const ct = r.headers.get("content-type") || "";
+        if (!ct.includes("application/json")) return null;
+        try { return await r.json(); } catch { return null; }
+      };
+      const [ev, re, sc, st] = await Promise.all([
+        safeJson("/api/events"),
+        safeJson("/api/repos"),
+        safeJson("/api/compliance"),
+        safeJson("/api/system-status"),
+      ]);
+      if (Array.isArray(ev)) setEvents(ev);
+      if (Array.isArray(re)) setRepos(re);
+      if (sc && typeof sc === "object") setScore(sc);
+      if (st && typeof st === "object" && typeof st.status === "string") setStatus(st.status);
+    } catch {
+      /* swallow transient network errors so the dev overlay doesn't block the UI */
+    }
   }
 
   useEffect(() => {
@@ -1069,22 +1156,34 @@ export default function App() {
     }
   }, [events]);
 
-  // Force 1-second re-renders so timeAgo labels stay fresh
+  // Force 1-second re-renders so timeAgo labels stay fresh (only needed when signed in)
   useEffect(() => {
+    if (!authenticatedUser) return;
     const tick = setInterval(() => setEvents((prev: any[]) => [...prev]), 1000);
     return () => clearInterval(tick);
-  }, []);
+  }, [authenticatedUser]);
 
   const triggerDemo = async () => {
     warmAudio();
     haptic(settings.haptics, 18);
 
-    // Phase 1 — set breach in backend, jump to Breach page
-    await fetch("/api/demo-trigger", { method: "POST" });
-    await refreshState();
+    // Phase 1 — OPTIMISTIC UI: jump to Breach page and play alert
+    // immediately. The backend POST + state refresh run in the background
+    // so the user sees feedback in <16ms instead of waiting for the
+    // round-trip. The Breach page renders from the page-driven
+    // displayStatus override, so it does not need backend state to look
+    // correct.
     setPage("Breach");
     playAlert(settings.sound);
     haptic(settings.haptics, [30, 20, 30, 20, 30]);
+
+    // Fire-and-forget the backend update; reconcile state when it returns.
+    void (async () => {
+      try {
+        await fetch("/api/demo-trigger", { method: "POST" });
+        await refreshState();
+      } catch { /* polling will catch up */ }
+    })();
 
     // Phase 2 — Correction page after 4 s
     setTimeout(() => {
@@ -1093,13 +1192,17 @@ export default function App() {
       haptic(settingsRef.current.haptics, 18);
     }, 4000);
 
-    // Phase 3 — Resolve backend, jump to Resolution page after 8 s
-    setTimeout(async () => {
-      await fetch("/api/demo-resolve", { method: "POST" });
-      await refreshState();
+    // Phase 3 — Resolve backend (background), jump to Resolution page after 8 s
+    setTimeout(() => {
       setPage("Resolution");
       playTing(settingsRef.current.sound);
       haptic(settingsRef.current.haptics, [10, 30, 10]);
+      void (async () => {
+        try {
+          await fetch("/api/demo-resolve", { method: "POST" });
+          await refreshState();
+        } catch { /* polling will catch up */ }
+      })();
     }, 8000);
   };
 
@@ -1126,8 +1229,93 @@ export default function App() {
     [repos, activePlatforms.join(",")]
   );
 
-  if (!authenticatedUser) {
-    return <AuthScreen theme={theme} sound={settings.sound} haptics={settings.haptics} onAuthenticated={setAuthenticatedUser} />;
+  if (!authenticatedUser && !publicWarRoom) {
+    return (
+      <AuthScreen
+        theme={theme}
+        sound={settings.sound}
+        haptics={settings.haptics}
+        onAuthenticated={setAuthenticatedUser}
+        onTryPublic={() => setPublicWarRoom(true)}
+      />
+    );
+  }
+
+  // Public War Room shell — no auth, no other tabs, no polling.
+  // This is the path judges/visitors land on when they click "Try War Room".
+  if (publicWarRoom && !authenticatedUser) {
+    const dark = theme === "dark";
+    const shellBg = dark
+      ? "linear-gradient(180deg,#1C2C45 0%,#142237 100%)"
+      : "linear-gradient(180deg,#DDD0B8 0%,#C9BB9E 100%)";
+    const shellText = dark ? "white" : "#1C2C45";
+    return (
+      <div style={{
+        minHeight: "100dvh", background: shellBg, color: shellText,
+        fontFamily: "Inter, system-ui, sans-serif", padding: "0 0 48px",
+      }}>
+        <div className="wr-public-topbar" style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          gap: 10, flexWrap: "wrap",
+          borderBottom: dark
+            ? "1px solid rgba(255,255,255,0.06)"
+            : "1px solid rgba(28,44,69,0.06)",
+          marginBottom: 18,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flexWrap: "wrap" }}>
+            <span style={{
+              fontSize: 14, fontWeight: 800, color: "#C49A47", letterSpacing: "0.10em",
+            }}>REPOGUARD</span>
+            <span style={{
+              fontSize: 10, color: dark ? "rgba(255,255,255,0.45)" : "rgba(28,44,69,0.50)",
+              letterSpacing: "0.10em", textTransform: "uppercase",
+            }}>· Public Scanner</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => {
+                try { window.localStorage.removeItem("repoguard.warRoom.v2"); } catch {}
+                setWarRoomKey(k => k + 1);
+              }}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(28,44,69,0.10)",
+                color: dark ? "rgba(255,255,255,0.48)" : "rgba(28,44,69,0.48)",
+                borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+                flexShrink: 0,
+              }}
+            >
+              ↺ Reset Session
+            </button>
+            <button
+              onClick={() => setPublicWarRoom(false)}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
+                color: dark ? "rgba(255,255,255,0.75)" : "rgba(28,44,69,0.75)",
+                borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+                flexShrink: 0,
+              }}
+            >
+              Sign in →
+            </button>
+          </div>
+        </div>
+        <div className="wr-public-shell" style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <WarRoom key={warRoomKey} theme={theme} />
+        </div>
+        <style>{`
+          .wr-public-shell { padding: 0 18px; }
+          @media (max-width: 600px) { .wr-public-shell { padding: 0 12px; } }
+          @media (max-width: 400px) { .wr-public-shell { padding: 0 10px; } }
+          .wr-public-topbar { padding: 16px 22px; }
+          @media (max-width: 600px) { .wr-public-topbar { padding: 12px 14px; } }
+          @media (max-width: 400px) { .wr-public-topbar { padding: 10px 12px; } }
+        `}</style>
+      </div>
+    );
   }
 
   const dark = theme === "dark";
@@ -1387,6 +1575,8 @@ export default function App() {
         </div>
       </Panel>
     ),
+
+    "War Room": <WarRoom theme={theme} />,
   };
 
   return (
@@ -1560,13 +1750,25 @@ export default function App() {
             <LivePulse theme={theme} />
           </div>
 
-          {/* Right: settings + status badge */}
+          {/* Right: settings · log out · status badge */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={() => { haptic(settings.haptics, 10); setSettingsOpen(true); }}
               style={{ background: cardBg, border: cardBorder, color: shellText,
                 borderRadius: 10, padding: "8px 14px", cursor: "pointer",
                 fontWeight: 600, fontSize: 13, minHeight: 40, fontFamily: "inherit" }}>
               ⚙ Settings
+            </button>
+            <button
+              onClick={() => { setAuthenticatedUser(""); setPublicWarRoom(true); }}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
+                color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)",
+                borderRadius: 10, padding: "8px 12px", cursor: "pointer",
+                fontWeight: 600, fontSize: 12, minHeight: 40, fontFamily: "inherit",
+              }}
+            >
+              Log Out
             </button>
             <StatusBadge status={status} theme={theme} />
           </div>

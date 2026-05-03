@@ -1,0 +1,133 @@
+Switch to Build mode.
+
+We are on buildathon-war-room.
+
+This is a FINAL MOBILE USABILITY + SESSION CONTROL FIX.
+
+Do not redesign the UI.
+Do not add unrelated features.
+Do not refactor the whole app.
+Do not disturb the live public repo scanner.
+
+OBJECTIVE
+Fix the final two usability issues before submission:
+
+1. Add a visible Log Out / Exit Operator Session control.
+2. Fix the mobile Scan Public Repo input so typing, copy, and paste work normally.
+
+==================================================
+FIX 1 — ADD LOG OUT / EXIT SESSION
+==================================================
+
+Add a clear session control in the app header or settings area.
+
+Required label:
+- If user is authenticated/operator mode: “Log Out”
+- If user is in public War Room mode: “Exit Session” or “Reset Session”
+
+Behavior:
+- clear authenticated user/session state
+- clear demo auth state if present
+- return to public War Room entry or login screen depending on current mode
+- do NOT clear the public repo input unless user explicitly chooses Reset
+- do NOT clear the last live scan unless logout is from protected/operator mode and session state requires it
+
+If the app has no real auth session token, still add a functional control that:
+- sets authenticated state to false
+- clears stored auth/email/demo login state
+- routes user back to the public entry state
+
+==================================================
+FIX 2 — MOBILE INPUT FOCUS / TYPING / PASTE BUG
+==================================================
+
+The Scan Public Repo input is broken on mobile.
+
+Observed behavior:
+- after each typed character, the input loses focus
+- user has to tap the box again for every character
+- copy/paste does not work reliably
+
+This is a hard blocker.
+
+Fix requirements:
+- typing must keep cursor in the input
+- user must be able to type a full repo string continuously
+- user must be able to paste a full repo URL
+- input value must remain stable
+- Scan Public Repo button must enable after input is non-empty
+- no re-render/remount should steal focus after each keystroke
+
+Inspect artifacts/repoguard/src/components/WarRoom.tsx.
+
+Likely causes to check and fix:
+- Card component defined inside WarRoom causing subtree identity churn
+- SectionLabel / Tile / inline component definitions causing remounts
+- dynamic style/template injection inside render
+- loadPersistedState still indirectly causing render churn
+- input being inside a subtree that remounts on repoInput change
+- localStorage write on every keystroke causing mobile focus instability
+- form/button layout reflow causing tap/focus loss
+- focus-restoration effect firing at wrong times
+- parent App rerendering/remounting WarRoom on state changes
+
+Required implementation:
+1. Stabilize the input subtree.
+2. Do not remount the input while typing.
+3. Memoize or move inline helper components outside WarRoom if needed.
+4. Debounce localStorage persistence for repoInput or skip persisting repoInput until blur/submit.
+5. Remove any effect that calls focus/blur during normal typing.
+6. Do not call setScanMode, setSelectedRiskId, setFixesApplied, or setStatusOverrides during normal typing.
+7. Use normal input attributes:
+   - autoCapitalize="none"
+   - autoCorrect="off"
+   - spellCheck={false}
+   - inputMode="url"
+   - enterKeyHint="go"
+8. Add onPaste handler only if needed, and it must not prevent default unless intentionally setting the value.
+
+Button disabled logic must remain:
+disabled = scanMode.kind === "scanning" || !repoInput.trim()
+
+==================================================
+ACCEPTANCE TESTS
+==================================================
+
+Mobile test:
+1. Tap Scan Public Repo input.
+2. Type: vercel/next.js
+3. Cursor remains active after every character.
+4. Full text remains visible.
+5. Scan Public Repo button enables.
+6. Paste https://github.com/vercel/next.js into the input.
+7. Full pasted value remains visible.
+8. Click Scan Public Repo.
+9. LIVE SCAN result renders.
+
+Desktop test:
+1. Type owner/repo.
+2. Paste full GitHub URL.
+3. Scan still works.
+4. No regression.
+
+Session control test:
+1. Log Out / Exit Session button is visible.
+2. Click it.
+3. App returns to correct public/login state.
+4. No crash.
+5. Public scanner remains accessible.
+
+VALIDATION
+Run:
+1. pnpm --filter @workspace/repoguard run build
+2. pnpm --filter @workspace/repoguard run typecheck
+3. python3 -m py_compile backend/scanner.py backend/app.py backend/run.py
+4. one live scan test from UI if possible
+
+OUTPUT ONLY:
+1. files changed
+2. exact cause of mobile input losing focus
+3. logout/session control added
+4. mobile typing/paste validation result
+5. build/typecheck result
+6. whether final submission state is green

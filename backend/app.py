@@ -4,17 +4,22 @@ Includes thread-safe sliding-window rate limiting + lockout protections.
 All limits are enforced in-process (no external dependency required).
 """
 
+import os
 import threading
 import time
 import random
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from scanner import scan_repo
 
 # ─── Rate Limiter ─────────────────────────────────────────────────────────────
 # Pure stdlib, thread-safe, sliding-window implementation.
@@ -94,9 +99,10 @@ limiter = _RateLimiter()
 
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
+    # Trust the direct socket address. We intentionally do NOT honour
+    # X-Forwarded-For because, without a verified trusted-proxy chain, any
+    # client could spoof the header to bypass per-IP rate limits and burn
+    # through GitHub's unauthenticated API quota for everyone else.
     return request.client.host if request.client else "unknown"
 
 
@@ -154,7 +160,7 @@ repos: list = [
     {"id": "2", "source": "GitLab",    "name": "frontend",     "issue": "Monitoring active", "severity": "none", "status": "secure",  "before": 88, "after": 88, "checked": "now"},
     {"id": "3", "source": "Bitbucket", "name": "worker-queue", "issue": "Monitoring active", "severity": "none", "status": "secure",  "before": 94, "after": 94, "checked": "now"},
 ]
-system_status: dict = {"status": "secure"}
+system_status: dict = {"status": "monitoring"}
 login_codes: Dict[str, str] = {}
 
 _START_TIME = time.monotonic()
@@ -206,11 +212,16 @@ def health():
 
 
 @app.get("/api/_internal/rate-stats")
-def rate_stats():
+def rate_stats(request: Request):
     """
     Exposes rate-limiter internals for test reporting.
-    Staging / internal use only — do not expose this in production behind a public router.
+    Staging / internal use only — must NOT be reachable in production.
+
+    Gated on env var REPOGUARD_INTERNAL=1 (only set in dev / CI). In any other
+    environment this returns 404 so callers can't tell the endpoint exists.
     """
+    if os.environ.get("REPOGUARD_INTERNAL") != "1":
+        raise HTTPException(status_code=404)
     return limiter.stats()
 
 
@@ -358,4 +369,70 @@ def resolve():
         repo.update(status="resolved", issue="Repository returned to compliance", severity="none", after=100)
     system_status["status"] = "resolved"
     stamp("Repository returned to compliant state")
+
+    def _auto_reset():
+        system_status["status"] = "monitoring"
+        for i, repo in enumerate(repos):
+            repo.update(status="secure", issue="Monitoring active", severity="none")
+
+    threading.Timer(90.0, _auto_reset).start()
     return {"status": "ok"}
+
+
+# ─── Real public-repo scan (War Room) ────────────────────────────────────────
+# No GitHub token required; uses GitHub's public unauthenticated Contents API.
+# Rate limited per-IP so a single visitor can't exhaust the upstream quota.
+
+class ScanBody(BaseModel):
+    repo: str
+
+
+@app.post("/api/scan")
+def scan_endpoint(body: ScanBody, request: Request):
+    ip = _client_ip(request)
+    _enforce(f"war_room_scan:{ip}", limit=15, window=60, lockout_secs=60)
+    try:
+        result = scan_repo(body.repo)
+    except Exception as e:
+        return JSONResponse(
+            status_code=200,
+            content={"ok": False, "error": "SCAN_ERROR",
+                     "message": f"Scan failed unexpectedly: {type(e).__name__}"},
+        )
+    return result
+
+
+# ─── Production: serve the built frontend ────────────────────────────────────
+# In dev, the Vite dev server runs separately and proxies /api → 127.0.0.1:8000.
+# In production (autoscale deployment), Vite is not running — this backend is the
+# only process. We serve the frontend's `dist/public` build directory and
+# fall back to index.html for client-side routes (SPA).
+#
+# Registered AFTER all /api/* routes so FastAPI's route table takes precedence.
+
+_DIST = (Path(__file__).resolve().parent.parent / "artifacts" / "repoguard" / "dist" / "public").resolve()
+_INDEX = _DIST / "index.html"
+
+if _DIST.is_dir() and _INDEX.is_file():
+    _ASSETS = _DIST / "assets"
+    if _ASSETS.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS)), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def _spa_root():
+        return FileResponse(str(_INDEX))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa_fallback(full_path: str):
+        # /api/* routes are matched first by FastAPI; this only sees non-API paths.
+        # Resolve and enforce the path stays inside _DIST to block traversal
+        # (`..`, absolute paths, symlink escapes).
+        try:
+            candidate = (_DIST / full_path).resolve()
+            candidate.relative_to(_DIST)
+        except (ValueError, OSError):
+            # Escapes _DIST → fall back to SPA index, never disclose host files.
+            return FileResponse(str(_INDEX))
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(_INDEX))

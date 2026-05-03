@@ -18,13 +18,8 @@ localPort = 18733
 run = "pnpm --filter @workspace/repoguard run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/repoguard", "run", "build" ]
-publicDir = "artifacts/repoguard/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+build = [ "sh", "-c", "pnpm --filter @workspace/repoguard run build && pip install -r backend/requirements.txt" ]
+run = [ "sh", "-c", "cd backend && python run.py" ]
 
 [services.env]
 PORT = "18733"

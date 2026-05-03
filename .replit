@@ -38,7 +38,7 @@ expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 180000
 
 [[ports]]
 localPort = 5173
@@ -67,6 +67,10 @@ externalPort = 3002
 [[ports]]
 localPort = 18735
 externalPort = 4200
+
+[[ports]]
+localPort = 18736
+externalPort = 3000
 
 [nix]
 packages = ["libxcrypt", "unzipNLS"]
