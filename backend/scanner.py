@@ -11,6 +11,7 @@ score, and gates. Designed to be safe to call from a sync FastAPI handler
 
 from __future__ import annotations
 
+import os
 import re
 import json
 import base64
@@ -80,6 +81,15 @@ _GH_HEADERS = {
     "User-Agent": "RepoGuard-WarRoom/1.0",
     "Accept": "application/vnd.github+json",
 }
+
+_GITHUB_TOKEN = (
+    os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN")
+    or os.environ.get("GITHUB_TOKEN")
+    or os.environ.get("GH_TOKEN")
+)
+
+if _GITHUB_TOKEN:
+    _GH_HEADERS["Authorization"] = f"Bearer {_GITHUB_TOKEN}"
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
