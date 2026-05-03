@@ -89,6 +89,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
     persisted?.selectedRiskId ?? null,
   );
   const [reportOpen, setReportOpen] = useState(false);
+  const [rawOpen, setRawOpen] = useState(false);
   const [repoInput, setRepoInput] = useState(persisted?.repoInput ?? "");
   // User-driven status overrides per finding id. Backend always emits "open";
   // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
@@ -304,6 +305,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
     setRepoInput("");
     setStatusOverrides({});
     setReportOpen(false);
+    setRawOpen(false);
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(WAR_ROOM_STORAGE_KEY);
@@ -502,7 +504,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
           </button>
           {hasScan && (
             <button type="button" className="wr-ghost-btn" onClick={handleResetAll}
-              disabled={scanMode.kind === "scanning"}>
+              >
               ↻ Reset
             </button>
           )}
@@ -533,29 +535,92 @@ export default function WarRoom({ theme }: WarRoomProps) {
         )}
 
         {isSample && (
-          <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 10,
-            background: "rgba(252,211,77,0.08)", border: "1px solid rgba(252,211,77,0.30)",
-            fontSize: 12.5, color: subText }}>
-            <b style={{ color: "#FCD34D" }}>Sample mode:</b> using deterministic seeded findings,
-            not a real repo. Enter a repo above for a live scan.
+          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10,
+            background: "rgba(252,211,77,0.08)", border: "1px solid rgba(252,211,77,0.40)",
+            fontSize: 13 }}>
+            <div style={{ color: "#FCD34D", fontWeight: 800, marginBottom: 3 }}>
+              SAMPLE SCAN — example data only
+            </div>
+            <div style={{ color: subText, fontSize: 12.5, lineHeight: 1.5 }}>
+              This is seeded example data and not a live repo scan. Enter a public GitHub repo above to run a real scan against actual repository contents.
+            </div>
           </div>
         )}
 
         {isReal && realScan && (
-          <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 10,
-            background: "rgba(110,231,183,0.08)", border: "1px solid rgba(110,231,183,0.30)",
-            fontSize: 12.5, color: subText, lineHeight: 1.5 }}>
-            <span style={{ color: "#6EE7B7", fontWeight: 800 }}>● Live scan</span>{" "}
-            of <a href={realScan.repo.url ?? "#"} target="_blank" rel="noopener noreferrer"
-              style={{ color: "#C49A47", fontFamily: "monospace", textDecoration: "none" }}>
-              {realScan.repo.fullName}
-            </a>{" "}
-            · branch <code style={{ fontFamily: "monospace", color: text }}>{realScan.repo.defaultBranch}</code>
-            {realScan.repo.language && <> · {realScan.repo.language}</>}
-            {" · "}{filesScanned.length} files inspected
+          <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10,
+            background: "rgba(110,231,183,0.08)", border: "1px solid rgba(110,231,183,0.40)",
+            fontSize: 12.5, lineHeight: 1.6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+              <span style={{ color: "#6EE7B7", fontWeight: 800, fontSize: 11,
+                letterSpacing: "0.10em", textTransform: "uppercase" }}>● LIVE SCAN</span>
+              <a href={realScan.repo.url ?? "#"} target="_blank" rel="noopener noreferrer"
+                style={{ color: "#C49A47", fontFamily: "monospace", textDecoration: "none", fontSize: 13 }}>
+                {realScan.repo.fullName}
+              </a>
+              {realScan.repo.language && (
+                <span style={{ color: subText }}>· {realScan.repo.language}</span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", color: subText, fontSize: 12 }}>
+              <span>Branch: <code style={{ color: text, fontFamily: "monospace" }}>{realScan.repo.defaultBranch}</code></span>
+              <span>Files scanned: <b style={{ color: text }}>{filesScanned.length}</b></span>
+              <span>Rules: <b style={{ color: text }}>{realScan.rulesExecuted ?? 12}</b></span>
+              <span>Scanned: <b style={{ color: text }}>{new Date(realScan.scanTime).toLocaleTimeString()}</b></span>
+              {(realScan.filesUnavailable ?? 0) > 0 && (
+                <span style={{ color: "#FCD34D" }}>{realScan.filesUnavailable} not found / skipped</span>
+              )}
+            </div>
+            {filesScanned.length > 0 && (
+              <div style={{ marginTop: 6, color: subtle, fontFamily: "monospace", fontSize: 11,
+                wordBreak: "break-all", overflowWrap: "anywhere" }}>
+                {filesScanned.slice(0, 6).join("  ·  ")}{filesScanned.length > 6 ? `  +${filesScanned.length - 6} more` : ""}
+              </div>
+            )}
           </div>
         )}
       </Card>
+
+      {/* ── Raw Scan Data toggle (live scans only) ──────────────────────── */}
+      {isReal && realScan && (
+        <div style={{ marginBottom: 14 }}>
+          <button className="wr-ghost-btn" onClick={() => setRawOpen(v => !v)}
+            style={{ width: "100%", textAlign: "left", fontSize: 12.5 }}>
+            {rawOpen ? "▲ Hide Raw Scan Data" : "▼ View Raw Scan Data"}
+            <span style={{ marginLeft: 8, color: subText, fontWeight: 400 }}>
+              — sanitized JSON for judge verification
+            </span>
+          </button>
+          {rawOpen && (
+            <div style={{ marginTop: 6, padding: "14px 16px", borderRadius: 12,
+              background: dark ? "rgba(0,0,0,0.40)" : "rgba(28,44,69,0.05)",
+              border: cardBorder, maxHeight: 420, overflowY: "auto" }}>
+              <pre style={{ margin: 0, fontSize: 11, color: text, fontFamily: "monospace",
+                whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                {JSON.stringify({
+                  scanMode: "live",
+                  repo: realScan.repo,
+                  scanTime: realScan.scanTime,
+                  score: realScan.score,
+                  scoreProjected: realScan.scoreProjected,
+                  status: realScan.status,
+                  rulesExecuted: realScan.rulesExecuted,
+                  filesScanned: realScan.filesScanned,
+                  filesUnavailable: realScan.filesUnavailable,
+                  findings: realScan.findings.map(f => ({
+                    id: f.id, category: f.category, severity: f.severity, file: f.file,
+                    shortExplanation: f.shortExplanation,
+                    ruleId: f.ruleId, evidenceType: f.evidenceType,
+                    evidenceFile: f.evidenceFile, evidenceSnippet: f.evidenceSnippet,
+                    evidenceLine: f.evidenceLine, confidence: f.confidence, source: f.source,
+                  })),
+                  gates: realScan.gates,
+                }, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── 1. Command Dashboard ─────────────────────────────────────────── */}
       <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
@@ -687,6 +752,23 @@ export default function WarRoom({ theme }: WarRoomProps) {
             <DetailRow label="Why it matters" body={selectedRisk.whyMatters} theme={theme} />
             <DetailRow label="How to fix"     body={selectedRisk.howToFix}   theme={theme} />
 
+            {(selectedRisk.ruleId != null || selectedRisk.evidenceSnippet != null) && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${divider}` }}>
+                <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800,
+                  letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Evidence
+                </div>
+                <div style={{ display: "grid", gap: 5 }}>
+                  {selectedRisk.ruleId && <EvidenceRow label="Rule ID" value={selectedRisk.ruleId} theme={theme} />}
+                  {selectedRisk.source && <EvidenceRow label="Source" value={selectedRisk.source} theme={theme} />}
+                  {selectedRisk.evidenceFile && <EvidenceRow label="File" value={selectedRisk.evidenceFile} theme={theme} />}
+                  {selectedRisk.evidenceLine != null && <EvidenceRow label="Line" value={String(selectedRisk.evidenceLine)} theme={theme} />}
+                  {selectedRisk.evidenceSnippet && <EvidenceRow label="Snippet" value={selectedRisk.evidenceSnippet} theme={theme} />}
+                  {selectedRisk.confidence && <EvidenceRow label="Confidence" value={selectedRisk.confidence} theme={theme} />}
+                </div>
+              </div>
+            )}
+
             {/* Status selector — visitors can mark their own triage decisions. */}
             <div style={{
               marginTop: 12, paddingTop: 12,
@@ -814,7 +896,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
           onClose={() => setReportOpen(false)}
           theme={theme}
           projectName={projectName}
-          repoUrl={repoUrl}
+          repoUrl={repoUrl ?? null}
           scanTimeISO={isReal && realScan ? realScan.scanTime : new Date().toISOString()}
           filesScanned={filesScanned}
           risks={risks}
@@ -825,6 +907,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
           statusLabel={statusLabel}
           statusColor={statusColor}
           isSample={isSample}
+          rulesExecuted={isReal && realScan ? realScan.rulesExecuted : undefined}
         />
       )}
     </div>
@@ -1076,7 +1159,7 @@ function EmptyState({ title, body, theme }: { title: string; body: string; theme
 function SafeToShipReport({
   onClose, theme, projectName, repoUrl, scanTimeISO, filesScanned,
   risks, gates, scoreBefore, scoreAfter, fixesApplied,
-  statusLabel, statusColor, isSample,
+  statusLabel, statusColor, isSample, rulesExecuted,
 }: {
   onClose: () => void;
   theme: string;
@@ -1092,6 +1175,7 @@ function SafeToShipReport({
   statusLabel: string;
   statusColor: string;
   isSample: boolean;
+  rulesExecuted?: number;
 }) {
   const dark = theme !== "light";
   const cardBg = dark ? "rgba(18,24,36,0.98)" : "#FFFFFF";
@@ -1107,16 +1191,19 @@ function SafeToShipReport({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   function buildSummary(): string {
+    const scanMode = isSample ? "SAMPLE (seeded example data)" : "LIVE (public GitHub API)";
     const lines: string[] = [
-      `RepoGuard — Safe-to-Ship Report`,
-      `Project:   ${projectName}${repoUrl ? `  (${repoUrl})` : ""}`,
-      `Scan time: ${scanTime}`,
-      `Status:    ${statusLabel}`,
-      `Integrity: ${scoreBefore}% → ${scoreAfter}%${fixesApplied ? "  [post-fix]" : ""}`,
+      `RepoGuard — Safe-to-Ship Report${isSample ? " · SAMPLE DATA" : " · LIVE SCAN"}`,
+      `Project:       ${projectName}${repoUrl ? `  (${repoUrl})` : ""}`,
+      `Scan mode:     ${scanMode}`,
+      `Scan time:     ${scanTime}`,
+      `Status:        ${statusLabel}`,
+      `Integrity:     ${scoreBefore}% → ${scoreAfter}%${fixesApplied ? "  [post-fix]" : ""}`,
       `Files scanned: ${filesScanned.length || "—"}`,
+      rulesExecuted != null ? `Rules executed: ${rulesExecuted}` : "",
       ``,
       `Findings (${risks.length}):`,
-    ];
+    ].filter(l => l !== undefined);
     if (risks.length === 0) lines.push("  (none)");
     risks.forEach(r => {
       lines.push(`  [${r.severity.toUpperCase()}] ${r.category} · ${r.file}`);
@@ -1158,7 +1245,9 @@ function SafeToShipReport({
       project: projectName,
       repoUrl,
       scanTime: scanTimeISO,
+      scanMode: isSample ? "sample" : "live",
       sample: isSample,
+      rulesExecuted: rulesExecuted ?? null,
       score: { before: scoreBefore, after: scoreAfter, postFix: fixesApplied },
       status: statusLabel,
       filesScanned,
@@ -1252,8 +1341,21 @@ function SafeToShipReport({
     }
     lines.push("");
 
+    lines.push(`## Accuracy / Evidence`);
+    lines.push(`- **Scan mode:** ${isSample ? "Sample — seeded example data" : "Live — public GitHub Contents API"}`);
+    lines.push(`- **Files scanned:** ${filesScanned.length || "—"}`);
+    if (rulesExecuted != null) lines.push(`- **Rules executed:** ${rulesExecuted}`);
+    if (!isSample) {
+      risks.filter(r => r.ruleId).forEach(r => {
+        lines.push(`- ${r.category} (\`${r.file}\`): rule \`${r.ruleId}\`` +
+          (r.confidence ? ` · confidence: ${r.confidence}` : "") +
+          (r.evidenceSnippet ? ` · evidence: ${r.evidenceSnippet}` : ""));
+      });
+    }
+    lines.push("");
+
     lines.push("---");
-    lines.push(`_Generated by RepoGuard${isSample ? " · sample data" : ""}._`);
+    lines.push(`_Generated by RepoGuard${isSample ? " · SAMPLE DATA — not a real repository scan" : " · LIVE SCAN from public GitHub API"}._`);
     return lines.join("\n");
   }
 
@@ -1344,6 +1446,64 @@ function SafeToShipReport({
             letterSpacing: "0.08em", background: `${statusColor}20`,
             border: `1px solid ${statusColor}66`, color: statusColor,
           }}>{statusLabel}</span>
+        </div>
+
+        {/* Scan mode banner */}
+        <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8,
+          background: isSample ? "rgba(252,211,77,0.08)" : "rgba(110,231,183,0.08)",
+          border: `1px solid ${isSample ? "rgba(252,211,77,0.30)" : "rgba(110,231,183,0.30)"}`,
+          fontSize: 12, fontWeight: 700,
+          color: isSample ? "#FCD34D" : "#6EE7B7" }}>
+          {isSample
+            ? "SAMPLE REPORT — not a live repository scan. Findings below are seeded example data."
+            : "LIVE REPORT — generated from public GitHub repository contents via unauthenticated GitHub API."}
+        </div>
+
+        {/* Accuracy / Evidence section */}
+        <SectionTitle>Accuracy / Evidence</SectionTitle>
+        <div style={{ display: "grid", gap: 4, fontSize: 12.5 }}>
+          <div><b style={{ color: text }}>Scan mode:</b>{" "}
+            <span style={{ color: sub }}>{isSample ? "Sample — seeded example data (not a live repository scan)" : "Live — public GitHub Contents API (no auth)"}</span>
+          </div>
+          {projectName && <div><b style={{ color: text }}>Repository:</b>{" "}
+            <span style={{ color: sub }}>{projectName}</span>
+          </div>}
+          <div><b style={{ color: text }}>Scan time:</b>{" "}
+            <span style={{ color: sub }}>{scanTime}</span>
+          </div>
+          <div><b style={{ color: text }}>Files scanned:</b>{" "}
+            <span style={{ color: sub }}>{filesScanned.length > 0 ? filesScanned.length : "—"}</span>
+          </div>
+          {rulesExecuted != null && <div><b style={{ color: text }}>Rules executed:</b>{" "}
+            <span style={{ color: sub }}>{rulesExecuted} distinct check categories</span>
+          </div>}
+          {!isSample && risks.length > 0 && risks.some(r => r.ruleId) && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 700, textTransform: "uppercase",
+                letterSpacing: "0.08em", marginBottom: 6 }}>Finding evidence</div>
+              <div style={{ display: "grid", gap: 4 }}>
+                {risks.filter(r => r.ruleId).map(r => (
+                  <div key={r.id} style={{ padding: "6px 10px", borderRadius: 8,
+                    background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
+                    border: `1px solid ${dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.08)"}`,
+                    fontSize: 11.5 }}>
+                    <div style={{ fontWeight: 700, color: text, marginBottom: 2 }}>
+                      {r.category} · <span style={{ fontFamily: "monospace", color: sub }}>{r.file}</span>
+                    </div>
+                    <div style={{ color: sub }}>
+                      {r.ruleId && <span>Rule: <code style={{ fontFamily: "monospace" }}>{r.ruleId}</code></span>}
+                      {r.evidenceType && <span> · {r.evidenceType}</span>}
+                      {r.confidence && <span> · confidence: <b>{r.confidence}</b></span>}
+                    </div>
+                    {r.evidenceSnippet && (
+                      <div style={{ fontFamily: "monospace", color: sub, marginTop: 2, fontSize: 11,
+                        wordBreak: "break-all" }}>{r.evidenceSnippet}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Critical blockers */}
