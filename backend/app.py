@@ -160,7 +160,7 @@ repos: list = [
     {"id": "2", "source": "GitLab",    "name": "frontend",     "issue": "Monitoring active", "severity": "none", "status": "secure",  "before": 88, "after": 88, "checked": "now"},
     {"id": "3", "source": "Bitbucket", "name": "worker-queue", "issue": "Monitoring active", "severity": "none", "status": "secure",  "before": 94, "after": 94, "checked": "now"},
 ]
-system_status: dict = {"status": "secure"}
+system_status: dict = {"status": "monitoring"}
 login_codes: Dict[str, str] = {}
 
 _START_TIME = time.monotonic()
@@ -369,6 +369,13 @@ def resolve():
         repo.update(status="resolved", issue="Repository returned to compliance", severity="none", after=100)
     system_status["status"] = "resolved"
     stamp("Repository returned to compliant state")
+
+    def _auto_reset():
+        system_status["status"] = "monitoring"
+        for i, repo in enumerate(repos):
+            repo.update(status="secure", issue="Monitoring active", severity="none")
+
+    threading.Timer(90.0, _auto_reset).start()
     return {"status": "ok"}
 
 

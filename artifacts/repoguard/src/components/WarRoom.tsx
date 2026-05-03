@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   SEEDED_RISKS,
   GATES_BEFORE,
@@ -91,11 +91,20 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const [reportOpen, setReportOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
   const [repoInput, setRepoInput] = useState(persisted?.repoInput ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
   // User-driven status overrides per finding id. Backend always emits "open";
   // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
   const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>(
     persisted?.statusOverrides ?? {},
   );
+
+  // Restore cursor to the input after a failed scan so the user can immediately
+  // correct the repo name without having to click back into the field.
+  useEffect(() => {
+    if (scanMode.kind === "error") {
+      inputRef.current?.focus();
+    }
+  }, [scanMode.kind]);
 
   // Persist War Room state across page refreshes so the last scan, fix-applied
   // status, selected risk, and triage overrides survive a reload. Transient
@@ -480,11 +489,11 @@ export default function WarRoom({ theme }: WarRoomProps) {
         <form onSubmit={(e) => { e.preventDefault(); handleRealScan(repoInput); }}
           style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input
+            ref={inputRef}
             type="text"
             value={repoInput}
             onChange={(e) => setRepoInput(e.target.value)}
             placeholder="vercel/next.js  or  https://github.com/owner/repo"
-            disabled={scanMode.kind === "scanning"}
             style={{
               flex: "1 1 280px", minWidth: 200,
               padding: "11px 14px", borderRadius: 12,

@@ -1134,11 +1134,12 @@ export default function App() {
     }
   }, [events]);
 
-  // Force 1-second re-renders so timeAgo labels stay fresh
+  // Force 1-second re-renders so timeAgo labels stay fresh (only needed when signed in)
   useEffect(() => {
+    if (!authenticatedUser) return;
     const tick = setInterval(() => setEvents((prev: any[]) => [...prev]), 1000);
     return () => clearInterval(tick);
-  }, []);
+  }, [authenticatedUser]);
 
   const triggerDemo = async () => {
     warmAudio();
