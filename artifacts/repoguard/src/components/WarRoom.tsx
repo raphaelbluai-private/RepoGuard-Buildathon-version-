@@ -80,22 +80,29 @@ function loadPersistedState(): PersistedWarRoomState | null {
 
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
-  const persisted = loadPersistedState();
+  // Lazy initializers: loadPersistedState runs exactly once on mount, never
+  // on re-renders. This prevents localStorage reads on every render cycle and
+  // ensures repoInput / statusOverrides cannot be silently reset by a parent
+  // re-render that doesn't remount this component.
   const [scanMode, setScanMode] = useState<ScanMode>(
-    persisted?.scanMode ?? { kind: "idle" },
+    () => loadPersistedState()?.scanMode ?? { kind: "idle" },
   );
-  const [fixesApplied, setFixesApplied] = useState(persisted?.fixesApplied ?? false);
+  const [fixesApplied, setFixesApplied] = useState<boolean>(
+    () => loadPersistedState()?.fixesApplied ?? false,
+  );
   const [selectedRiskId, setSelectedRiskId] = useState<string | null>(
-    persisted?.selectedRiskId ?? null,
+    () => loadPersistedState()?.selectedRiskId ?? null,
   );
   const [reportOpen, setReportOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
-  const [repoInput, setRepoInput] = useState(persisted?.repoInput ?? "");
+  const [repoInput, setRepoInput] = useState<string>(
+    () => loadPersistedState()?.repoInput ?? "",
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   // User-driven status overrides per finding id. Backend always emits "open";
   // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
   const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>(
-    persisted?.statusOverrides ?? {},
+    () => loadPersistedState()?.statusOverrides ?? {},
   );
 
   // Restore cursor to the input after a failed scan so the user can immediately

@@ -14,7 +14,7 @@ function getCtx(): AudioContext | null {
   const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!AC) return null;
   if (!_ctx) _ctx = new AC();
-  if (_ctx.state === "suspended") _ctx.resume();
+  if (_ctx!.state === "suspended") _ctx!.resume();
   return _ctx;
 }
 

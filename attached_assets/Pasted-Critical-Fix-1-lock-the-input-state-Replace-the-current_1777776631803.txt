@@ -1,0 +1,187 @@
+Critical Fix 1 — lock the input state
+
+Replace the current render-body persisted-state pattern with lazy initialization.
+
+The Agent needs to fix this exact class of issue:
+
+loadPersistedState must not run inside the render path as live state source.
+repoInput must not clear unless Reset is clicked.
+sample scan must not clear repoInput.
+error must not clear repoInput.
+input must not remount while typing.
+Critical Fix 2 — prove real scan from UI
+
+Do not accept backend-only success. The test must happen from the visible app:
+
+vercel/next.js
+facebook/react
+https://github.com/vercel/next.js
+invalid input: fff
+
+Required evidence:
+
+LIVE SCAN banner
+actual repo name
+actual default branch
+files scanned count
+raw scan JSON
+report says LIVE REPORT
+Critical Fix 3 — harden deployment path
+
+The app needs a single deployable route. Either:
+
+Option A — FastAPI serves the built frontend
+
+Best for stability:
+
+pnpm build
+FastAPI serves artifacts/repoguard/dist/public
+/api remains backend
+all unknown routes serve index.html
+Option B — Replit deployment starts both frontend and backend
+
+Less clean, but acceptable if reliable.
+
+Right now, I do not see a clean production start path in root package.json.
+
+Exact Replit prompt to finish the build
+
+Use this now:
+
+Switch to Build mode.
+
+We are on buildathon-war-room.
+
+This is the FINAL CONTEST READINESS HARDENING PASS.
+
+Do not redesign the UI.
+Do not add new features.
+Do not touch unrelated pages.
+Do not report success until the public live scan works from the visible UI and the app has a clean deployable path.
+
+OBJECTIVE
+Make RepoGuard War Room contest-ready:
+1. Public repo input must work reliably.
+2. Live scan must visibly replace sample scan.
+3. Report must prove live accuracy.
+4. Deployment path must be stable and public.
+
+==================================================
+FIX 1 — REPO INPUT STATE / FOCUS
+==================================================
+
+WarRoom.tsx still loads persisted state inside the component render path.
+
+Fix it properly:
+- load persisted state exactly once using lazy useState initializer or useRef
+- do not call loadPersistedState as an active render-path state source
+- repoInput must be controlled by stable useState
+- input must not remount while typing
+- input must not clear on sample scan
+- input must not clear on error
+- input must only clear when Reset is clicked
+- cursor must stay in the field while typing
+
+Required behavior:
+- type "vercel/next.js"
+- text remains visible
+- cursor stays active
+- button enables immediately
+
+==================================================
+FIX 2 — LIVE SCAN MUST TAKE OVER SAMPLE MODE
+==================================================
+
+When Scan Public Repo succeeds:
+- set scanMode to real
+- clear sample mode
+- show LIVE SCAN banner
+- show actual repo fullName
+- show default branch
+- show scan timestamp
+- show filesScanned count
+- show raw scan data option
+- report must say LIVE REPORT
+
+Do not auto-fallback to sample on failed scan.
+Only show sample data if user clicks Try Sample Scan.
+
+==================================================
+FIX 3 — DEPLOYMENT PATH
+==================================================
+
+Make this project deployable and publicly usable.
+
+Required:
+- frontend builds
+- backend starts
+- public route serves the app
+- /api routes work
+- no dependency on Vite dev proxy for production
+- no login required for public scan
+- root URL loads usable War Room public scanner
+
+Preferred:
+- backend serves built frontend from artifacts/repoguard/dist/public
+- unknown non-api routes return index.html
+- /api routes remain FastAPI
+
+If using FastAPI static serving:
+- add StaticFiles / FileResponse correctly
+- ensure /api/* still resolves before static fallback
+- ensure production run command starts backend
+- ensure build command builds frontend before deploy
+
+==================================================
+FIX 4 — VALIDATION SCRIPT
+==================================================
+
+Add a small validation script or documented command sequence that verifies:
+
+Backend:
+- imports app.py, scanner.py, run.py
+- /api/health returns ok
+- /api/scan accepts vercel/next.js
+- /api/scan handles invalid input fff cleanly
+
+Frontend:
+- pnpm build succeeds
+- pnpm typecheck succeeds if available
+
+UI:
+- visible input accepts vercel/next.js
+- Scan Public Repo button enables
+- live scan result renders
+- sample scan remains optional only
+
+==================================================
+VALIDATION REQUIRED BEFORE SUCCESS
+==================================================
+
+Run and report:
+
+1. pnpm build
+2. pnpm typecheck
+3. backend dependency install or import check
+4. python compile/import check
+5. backend health check
+6. backend scan test:
+   - vercel/next.js
+   - facebook/react
+   - fff
+7. visible UI test:
+   - type vercel/next.js
+   - click Scan Public Repo
+   - confirm LIVE SCAN
+   - confirm dashboard says vercel/next.js
+   - confirm report says LIVE REPORT
+8. deployed/public URL test if available
+
+OUTPUT ONLY:
+1. files changed
+2. exact cause of input/focus bug
+3. exact deployment path implemented
+4. live scan validation results
+5. build/typecheck/backend validation results
+6. whether the app is contest-ready: YES or NO
+7. remaining risks
