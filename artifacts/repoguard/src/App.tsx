@@ -563,12 +563,21 @@ function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
+      let data: any = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok || !data?.sent) {
+        setError(
+          res.status === 429
+            ? "Too many requests — wait a minute and try again."
+            : "Operator login unavailable. Public War Room scanner is still available."
+        );
+        return;
+      }
       setDemoCode(data.demo_code);
       setStep("code");
       playSwoosh(sound);
     } catch {
-      setError("Connection error — is the backend running?");
+      setError("Operator login unavailable. Public War Room scanner is still available.");
     } finally { setLoading(false); }
   };
 
@@ -592,7 +601,7 @@ function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
         haptic(haptics, [50, 50, 50]);
       }
     } catch {
-      setError("Connection error — is the backend running?");
+      setError("Operator login unavailable. Public War Room scanner is still available.");
     } finally { setLoading(false); }
   };
 
