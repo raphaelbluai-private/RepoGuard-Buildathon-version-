@@ -78,6 +78,43 @@ function loadPersistedState(): PersistedWarRoomState | null {
   }
 }
 
+// ─── Stable module-level sub-components ───────────────────────────────────────
+// Card and SectionLabel MUST live outside WarRoom so React always sees the same
+// component type across renders.  Defining them inside the function body creates
+// a new reference on every render, forcing a full subtree remount that steals
+// keyboard focus from the scan input after every keystroke — especially on mobile.
+
+const Card = React.memo(function Card({
+  children,
+  padding = "16px 18px",
+  style,
+  dark,
+}: {
+  children: React.ReactNode;
+  padding?: string;
+  style?: React.CSSProperties;
+  dark: boolean;
+}) {
+  const cardBg     = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
+  const cardBorder = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
+  return (
+    <div className="relative overflow-hidden wr-card-body" style={{
+      background: cardBg, border: cardBorder, borderRadius: 16, padding,
+      minWidth: 0,
+      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+      boxShadow: dark ? "0 4px 20px rgba(0,0,0,0.30)" : "0 4px 20px rgba(28,44,69,0.06)",
+      ...style,
+    }}>{children}</div>
+  );
+});
+
+const SectionLabel = React.memo(function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
+      textTransform: "uppercase", marginBottom: 10 }}>{children}</div>
+  );
+});
+
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
   // Lazy initializers: loadPersistedState runs exactly once on mount, never
@@ -116,22 +153,27 @@ export default function WarRoom({ theme }: WarRoomProps) {
   // Persist War Room state across page refreshes so the last scan, fix-applied
   // status, selected risk, and triage overrides survive a reload. Transient
   // states ("scanning", "error") are filtered out on load.
+  // Debounced 300 ms so rapid repoInput keystrokes don't fire synchronous
+  // localStorage writes that can stall the main thread and cause mobile focus loss.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        WAR_ROOM_STORAGE_KEY,
-        JSON.stringify({
-          scanMode,
-          fixesApplied,
-          selectedRiskId,
-          statusOverrides,
-          repoInput,
-        }),
-      );
-    } catch {
-      // ignore storage errors (quota, private mode, etc.)
-    }
+    const id = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          WAR_ROOM_STORAGE_KEY,
+          JSON.stringify({
+            scanMode,
+            fixesApplied,
+            selectedRiskId,
+            statusOverrides,
+            repoInput,
+          }),
+        );
+      } catch {
+        // ignore storage errors (quota, private mode, etc.)
+      }
+    }, 300);
+    return () => window.clearTimeout(id);
   }, [scanMode, fixesApplied, selectedRiskId, statusOverrides, repoInput]);
 
   function setRiskStatus(id: string, s: RiskStatus) {
@@ -362,23 +404,6 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
 
-  const Card: React.FC<{ children: React.ReactNode; padding?: string; style?: React.CSSProperties }> = ({ children, padding = "16px 18px", style }) => (
-    <div className="relative overflow-hidden wr-card-body" style={{
-      background: cardBg, border: cardBorder, borderRadius: 16, padding,
-      // minWidth: 0 prevents this card from being forced wider than its
-      // parent grid track by long inline content (file paths, URLs, etc.).
-      minWidth: 0,
-      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-      boxShadow: dark ? "0 4px 20px rgba(0,0,0,0.30)" : "0 4px 20px rgba(28,44,69,0.06)",
-      ...style,
-    }}>{children}</div>
-  );
-
-  const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
-      textTransform: "uppercase", marginBottom: 10 }}>{children}</div>
-  );
-
   return (
     <div style={{ animation: "wrFadeIn 360ms ease both" }}>
       <style>{`
@@ -485,7 +510,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </div>
 
       {/* ── 0. Repo Input ───────────────────────────────────────────────── */}
-      <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="22px 22px 20px" style={{ marginBottom: 14 }}>
         <SectionLabel>Scan a Public GitHub Repo</SectionLabel>
         <div style={{ color: subText, fontSize: 13.5, lineHeight: 1.55, marginBottom: 12,
           maxWidth: 640 }}>
@@ -501,6 +526,11 @@ export default function WarRoom({ theme }: WarRoomProps) {
             value={repoInput}
             onChange={(e) => setRepoInput(e.target.value)}
             placeholder="vercel/next.js  or  https://github.com/owner/repo"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            inputMode="url"
+            enterKeyHint="go"
             style={{
               flex: "1 1 280px", minWidth: 200,
               padding: "11px 14px", borderRadius: 12,
@@ -639,7 +669,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       )}
 
       {/* ── 1. Command Dashboard ─────────────────────────────────────────── */}
-      <Card padding="22px 22px 20px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="22px 22px 20px" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
           <div>
@@ -684,7 +714,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </Card>
 
       {/* ── 2. Before / After Integrity ─────────────────────────────────── */}
-      <Card padding="22px 22px 24px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="22px 22px 24px" style={{ marginBottom: 14 }}>
         <SectionLabel>Integrity Score · Before vs After Fix Plan</SectionLabel>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24,
           flexWrap: "wrap", padding: "10px 0 6px" }}>
@@ -709,7 +739,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </Card>
 
       {/* ── 3. Risk Detection Panel ─────────────────────────────────────── */}
-      <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="20px 20px 22px" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
           marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
           <SectionLabel>Risk Detection</SectionLabel>
@@ -857,7 +887,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </Card>
 
       {/* ── 5. Safe-to-Ship Checklist ───────────────────────────────────── */}
-      <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="20px 20px 22px" style={{ marginBottom: 14 }}>
         <SectionLabel>Safe-to-Ship Checklist</SectionLabel>
 
         {!hasScan ? (
@@ -871,7 +901,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </Card>
 
       {/* ── 9. Agent Build Trace ────────────────────────────────────────── */}
-      <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="20px 20px 22px" style={{ marginBottom: 14 }}>
         <SectionLabel>Agent Build Trace</SectionLabel>
         <div style={{ display: "grid", gap: 0 }}>
           {AGENT_BUILD_TRACE.map((step, i) => {
@@ -889,7 +919,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </Card>
 
       {/* ── 10. Progress Evidence ───────────────────────────────────────── */}
-      <Card padding="20px 20px 22px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="20px 20px 22px" style={{ marginBottom: 14 }}>
         <SectionLabel>Buildathon Progress</SectionLabel>
         <div style={{ display: "grid", gap: 8, fontSize: 13.5, color: text, lineHeight: 1.6 }}>
           <EvidenceRow label="Built during" value="Replit 10-Year Buildathon" theme={theme} />

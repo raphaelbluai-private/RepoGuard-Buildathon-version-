@@ -1064,6 +1064,9 @@ export default function App() {
       return true;
     }
   });
+  // Incrementing this key forces WarRoom to remount — used by "Reset Session"
+  // to clear persisted state from localStorage and return to the idle scan view.
+  const [warRoomKey, setWarRoomKey] = useState(0);
   const [settings, setSettings] = useState<any>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("repoguard-settings") || "");
@@ -1249,22 +1252,40 @@ export default function App() {
               letterSpacing: "0.10em", textTransform: "uppercase",
             }}>· Public Scanner</span>
           </div>
-          <button
-            onClick={() => setPublicWarRoom(false)}
-            style={{
-              background: "transparent",
-              border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
-              color: dark ? "rgba(255,255,255,0.75)" : "rgba(28,44,69,0.75)",
-              borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
-              fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
-              flexShrink: 0,
-            }}
-          >
-            Sign in →
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => {
+                try { window.localStorage.removeItem("repoguard.warRoom.v2"); } catch {}
+                setWarRoomKey(k => k + 1);
+              }}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(28,44,69,0.10)",
+                color: dark ? "rgba(255,255,255,0.48)" : "rgba(28,44,69,0.48)",
+                borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+                flexShrink: 0,
+              }}
+            >
+              ↺ Reset Session
+            </button>
+            <button
+              onClick={() => setPublicWarRoom(false)}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
+                color: dark ? "rgba(255,255,255,0.75)" : "rgba(28,44,69,0.75)",
+                borderRadius: 10, padding: "7px 12px", fontFamily: "inherit",
+                fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em",
+                flexShrink: 0,
+              }}
+            >
+              Sign in →
+            </button>
+          </div>
         </div>
         <div className="wr-public-shell" style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <WarRoom theme={theme} />
+          <WarRoom key={warRoomKey} theme={theme} />
         </div>
         <style>{`
           .wr-public-shell { padding: 0 18px; }
@@ -1710,13 +1731,25 @@ export default function App() {
             <LivePulse theme={theme} />
           </div>
 
-          {/* Right: settings + status badge */}
+          {/* Right: settings · log out · status badge */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={() => { haptic(settings.haptics, 10); setSettingsOpen(true); }}
               style={{ background: cardBg, border: cardBorder, color: shellText,
                 borderRadius: 10, padding: "8px 14px", cursor: "pointer",
                 fontWeight: 600, fontSize: 13, minHeight: 40, fontFamily: "inherit" }}>
               ⚙ Settings
+            </button>
+            <button
+              onClick={() => { setAuthenticatedUser(""); setPublicWarRoom(true); }}
+              style={{
+                background: "transparent",
+                border: dark ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(28,44,69,0.14)",
+                color: dark ? "rgba(255,255,255,0.55)" : "rgba(28,44,69,0.55)",
+                borderRadius: 10, padding: "8px 12px", cursor: "pointer",
+                fontWeight: 600, fontSize: 12, minHeight: 40, fontFamily: "inherit",
+              }}
+            >
+              Log Out
             </button>
             <StatusBadge status={status} theme={theme} />
           </div>
