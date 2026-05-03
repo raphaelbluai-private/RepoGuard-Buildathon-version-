@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   SEEDED_RISKS,
   GATES_BEFORE,
@@ -114,6 +114,10 @@ const SectionLabel = React.memo(function SectionLabel({ children }: { children: 
       textTransform: "uppercase", marginBottom: 10 }}>{children}</div>
   );
 });
+
+// Stable style object so React.memo on Card can pass the shallow-equality check
+// for the `style` prop even when the parent re-renders (e.g. every keystroke).
+const SCAN_CARD_STYLE: React.CSSProperties = { marginBottom: 14 };
 
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
@@ -404,9 +408,10 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
 
-  return (
-    <div style={{ animation: "wrFadeIn 360ms ease both" }}>
-      <style>{`
+  // Memoised so the string reference is identical between keystrokes — React
+  // never needs to touch the <style> DOM node while the user is typing, which
+  // prevents browser CSS re-parses that can briefly disrupt :focus state.
+  const warRoomCss = useMemo(() => `
         @keyframes wrFadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -479,7 +484,17 @@ export default function WarRoom({ theme }: WarRoomProps) {
             overflow-wrap: anywhere;
           }
         }
-      `}</style>
+      `, [dark, text]);
+
+  // Stable onChange so React never replaces the DOM listener during typing.
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => setRepoInput(e.target.value),
+    []
+  );
+
+  return (
+    <div style={{ animation: "wrFadeIn 360ms ease both" }}>
+      <style>{warRoomCss}</style>
 
       {/* ── Hero header ──────────────────────────────────────────────────── */}
       <div className="wr-hero" style={{
@@ -510,7 +525,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       </div>
 
       {/* ── 0. Repo Input ───────────────────────────────────────────────── */}
-      <Card dark={dark} padding="22px 22px 20px" style={{ marginBottom: 14 }}>
+      <Card dark={dark} padding="22px 22px 20px" style={SCAN_CARD_STYLE}>
         <SectionLabel>Scan a Public GitHub Repo</SectionLabel>
         <div style={{ color: subText, fontSize: 13.5, lineHeight: 1.55, marginBottom: 12,
           maxWidth: 640 }}>
@@ -524,7 +539,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
             ref={inputRef}
             type="text"
             value={repoInput}
-            onChange={(e) => setRepoInput(e.target.value)}
+            onChange={handleInputChange}
             placeholder="vercel/next.js  or  https://github.com/owner/repo"
             autoCapitalize="none"
             autoCorrect="off"
