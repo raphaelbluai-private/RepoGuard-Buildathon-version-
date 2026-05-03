@@ -582,23 +582,33 @@ function AuthScreen({ sound, haptics, onAuthenticated, onTryPublic }: any) {
   };
 
   const verifyCode = async () => {
-    if (!code.trim()) return;
+    const normalizedCode = code.replace(/\D/g, "");
+    if (!normalizedCode) return;
     playClick(sound);
     haptic(haptics, 10);
     setLoading(true); setError("");
     try {
       const res = await fetch("/api/auth/verify-code", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ email, code: normalizedCode }),
       });
-      const data = await res.json();
-      if (data.verified) {
-        playSwoosh(sound);
-        haptic(haptics, [10, 30, 10]);
+      let data: any = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok) {
+        setError(
+          res.status === 429
+            ? "Too many attempts — wait a minute and try again."
+            : "Operator login unavailable. Public War Room scanner is still available."
+        );
+        return;
+      }
+      if (data?.verified) {
+        try { playSwoosh(sound); } catch { /* audio errors must not block login */ }
+        try { haptic(haptics, [10, 30, 10]); } catch { /* ignore */ }
         onAuthenticated(email);
       } else {
         setError("Incorrect code — check the code shown above.");
-        haptic(haptics, [50, 50, 50]);
+        try { haptic(haptics, [50, 50, 50]); } catch { /* ignore */ }
       }
     } catch {
       setError("Operator login unavailable. Public War Room scanner is still available.");
