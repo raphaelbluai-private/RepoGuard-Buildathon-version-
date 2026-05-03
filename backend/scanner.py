@@ -25,6 +25,8 @@ TIMEOUT = 8
 
 SEVERITY_WEIGHTS = {"critical": 25, "high": 15, "medium": 8, "low": 3}
 
+RULES_EXECUTED = 12  # number of distinct check categories in the engine
+
 CORE_FILES = [
     "package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock",
     "README.md", "readme.md", "Readme.md",
@@ -39,12 +41,12 @@ CORE_FILES = [
 # plus a length floor so we don't fire on sample placeholders like "sk-xxx".
 SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9]{20,}"),                            "OpenAI API key"),
-    (re.compile(r"ghp_[A-Za-z0-9]{30,}"),                            "GitHub personal access token"),
-    (re.compile(r"gho_[A-Za-z0-9]{30,}"),                            "GitHub OAuth token"),
-    (re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),                    "GitHub fine-grained PAT"),
-    (re.compile(r"xoxb-[A-Za-z0-9-]{20,}"),                          "Slack bot token"),
-    (re.compile(r"AKIA[0-9A-Z]{16}"),                                "AWS access key ID"),
-    (re.compile(r"AIza[A-Za-z0-9_-]{35}"),                           "Google API key"),
+    (re.compile(r"ghp_[A-Za-z0-9]{30,}"),                           "GitHub personal access token"),
+    (re.compile(r"gho_[A-Za-z0-9]{30,}"),                           "GitHub OAuth token"),
+    (re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),                   "GitHub fine-grained PAT"),
+    (re.compile(r"xoxb-[A-Za-z0-9-]{20,}"),                         "Slack bot token"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"),                               "AWS access key ID"),
+    (re.compile(r"AIza[A-Za-z0-9_-]{35}"),                          "Google API key"),
     (re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |)PRIVATE KEY-----"),
                                                                      "Private key block"),
 ]
@@ -55,7 +57,7 @@ UNSAFE_PATTERNS = [
     (re.compile(r"\bexec\s*\("),                                "exec()",                    "high"),
     (re.compile(r"shell\s*=\s*True"),                           "shell=True",                "high"),
     (re.compile(r"child_process\.(?:exec|spawn)\s*\("),         "child_process.exec/spawn",  "medium"),
-    (re.compile(r"\brm\s+-rf\s+/(?:\s|\"|'|$)"),                "rm -rf /",                  "critical"),
+    (re.compile(r"\brm\s+-rf\s+/(?:\s|\"|'|$)"),               "rm -rf /",                  "critical"),
     (re.compile(r"curl\b[^\n]*\|\s*(?:bash|sh)\b"),             "curl | sh",                 "high"),
     (re.compile(r"wget\b[^\n]*\|\s*(?:bash|sh)\b"),             "wget | sh",                 "high"),
 ]
@@ -80,11 +82,30 @@ _GH_HEADERS = {
 }
 
 
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _redact(s: str) -> str:
+    """Redact the middle of a secret-like string for safe display."""
+    if len(s) <= 8:
+        return "***REDACTED***"
+    return s[:4] + "***REDACTED***" + s[-4:]
+
+
 # ─── Input parsing ────────────────────────────────────────────────────────────
 
 def normalize_repo(s: str):
-    """Return (owner, repo, error_or_None)."""
-    s = (s or "").strip()
+    """Return (owner, repo, error_or_None).
+
+    Accepted formats:
+      owner/repo
+      github.com/owner/repo
+      https://github.com/owner/repo
+      https://github.com/owner/repo.git
+      Any of the above with trailing slash, query string, fragment,
+      pasted whitespace/newlines, or URL suffixes like /tree/<branch>,
+      /blob/<branch>/path, /pull/N, /issues/N, /actions, /wiki, etc.
+    """
+    s = (s or "").strip()          # strip all leading/trailing whitespace + newlines
     if not s:
         return None, None, "Repository is required."
     # Strip query strings / fragments / trailing slashes
@@ -94,7 +115,10 @@ def normalize_repo(s: str):
     s = re.sub(r"/(tree|blob|pull|issues|actions|wiki|releases|commits?|compare)(/.*)?$", "", s)
     m = _REPO_RE.search(s)
     if not m:
-        return None, None, "Use owner/repo or a github.com URL."
+        return None, None, (
+            "Couldn't parse that as a GitHub repo. "
+            "Use owner/repo or a full GitHub URL like https://github.com/owner/repo"
+        )
     return m.group("owner"), m.group("repo"), None
 
 
@@ -200,13 +224,15 @@ class _FindingBuilder:
         self._seen = set()
         self._counter = 0
 
-    def add(self, *, category, severity, file, title, what, why, how, fix_plan):
+    def add(self, *, category, severity, file, title, what, why, how, fix_plan,
+            evidence: dict | None = None):
         # De-dup identical findings.
         key = (category, file, title)
         if key in self._seen:
             return
         self._seen.add(key)
         self._counter += 1
+        ev = evidence or {}
         self.findings.append({
             "id": f"f{self._counter}",
             "category": category,
@@ -218,6 +244,14 @@ class _FindingBuilder:
             "whyMatters": why,
             "howToFix": how,
             "fixPlan": fix_plan,
+            # Evidence fields — present on every live-scan finding
+            "ruleId":          ev.get("ruleId"),
+            "evidenceType":    ev.get("evidenceType"),
+            "evidenceFile":    ev.get("evidenceFile"),
+            "evidenceSnippet": ev.get("evidenceSnippet"),
+            "evidenceLine":    ev.get("evidenceLine"),
+            "confidence":      ev.get("confidence"),
+            "source":          ev.get("source", "live_github_scan"),
         })
 
 
@@ -282,12 +316,23 @@ def _run_checks(file_map: dict[str, str]):
                 "Re-create .env.example with placeholder values",
                 "Commit and re-run the scan",
             ],
+            evidence={
+                "ruleId": "ENV_COMMITTED",
+                "evidenceType": "file_presence",
+                "evidenceFile": ".env",
+                "evidenceSnippet": ".env found on the default branch — readable by anyone",
+                "evidenceLine": None,
+                "confidence": "high",
+                "source": "live_github_scan",
+            },
         )
 
     # ── Check 2: token-like values in any fetched file ──
     for path, content in file_map.items():
         for pat, label in SECRET_PATTERNS:
-            if pat.search(content):
+            m = pat.search(content)
+            if m:
+                redacted = _redact(m.group(0))
                 fb.add(
                     category="Secrets Exposure", severity="critical", file=path,
                     title=f"{label} pattern detected in {path}",
@@ -301,6 +346,15 @@ def _run_checks(file_map: dict[str, str]):
                         "Replace with a runtime env lookup",
                         "Re-run the scan to confirm",
                     ],
+                    evidence={
+                        "ruleId": "SECRET_PATTERN",
+                        "evidenceType": "regex_match",
+                        "evidenceFile": path,
+                        "evidenceSnippet": redacted,
+                        "evidenceLine": None,
+                        "confidence": "high",
+                        "source": "live_github_scan",
+                    },
                 )
 
     # ── Check 3: env usage but no .env.example ──
@@ -317,12 +371,23 @@ def _run_checks(file_map: dict[str, str]):
                 "Update README with a 'Required env vars' section",
                 "Re-run the scan",
             ],
+            evidence={
+                "ruleId": "ENV_UNDOCUMENTED",
+                "evidenceType": "code_pattern",
+                "evidenceFile": ".env.example",
+                "evidenceSnippet": "process.env / os.environ usage detected; .env.example absent",
+                "evidenceLine": None,
+                "confidence": "medium",
+                "source": "live_github_scan",
+            },
         )
 
     # ── Check 4: .env.example contains real-looking secrets ──
     if has_env_example and env_example_content:
         for pat, label in SECRET_PATTERNS:
-            if pat.search(env_example_content):
+            m = pat.search(env_example_content)
+            if m:
+                redacted = _redact(m.group(0))
                 fb.add(
                     category="Secrets Exposure", severity="high", file=env_example_path,
                     title=f"{label} pattern in {env_example_path}",
@@ -334,6 +399,15 @@ def _run_checks(file_map: dict[str, str]):
                         "Rotate the credential at the provider if it was real",
                         "Re-run the scan",
                     ],
+                    evidence={
+                        "ruleId": "SECRET_IN_EXAMPLE",
+                        "evidenceType": "regex_match",
+                        "evidenceFile": env_example_path,
+                        "evidenceSnippet": redacted,
+                        "evidenceLine": None,
+                        "confidence": "high",
+                        "source": "live_github_scan",
+                    },
                 )
                 break
 
@@ -352,6 +426,15 @@ def _run_checks(file_map: dict[str, str]):
                     "Test it locally",
                     "Re-run the scan",
                 ],
+                evidence={
+                    "ruleId": "MISSING_BUILD_SCRIPT",
+                    "evidenceType": "config_missing_field",
+                    "evidenceFile": "package.json",
+                    "evidenceSnippet": 'scripts.build not present in package.json',
+                    "evidenceLine": None,
+                    "confidence": "high",
+                    "source": "live_github_scan",
+                },
             )
         if not has_start:
             fb.add(
@@ -365,6 +448,15 @@ def _run_checks(file_map: dict[str, str]):
                     "Add scripts.start that runs the server",
                     "Re-run the scan",
                 ],
+                evidence={
+                    "ruleId": "MISSING_START_SCRIPT",
+                    "evidenceType": "config_missing_field",
+                    "evidenceFile": "package.json",
+                    "evidenceSnippet": 'scripts.start and scripts.dev both absent from package.json',
+                    "evidenceLine": None,
+                    "confidence": "high",
+                    "source": "live_github_scan",
+                },
             )
 
     if has_package_json and not has_lockfile:
@@ -379,6 +471,15 @@ def _run_checks(file_map: dict[str, str]):
                 "Commit the resulting lockfile",
                 "Re-run the scan",
             ],
+            evidence={
+                "ruleId": "NO_LOCKFILE",
+                "evidenceType": "file_presence",
+                "evidenceFile": "package.json",
+                "evidenceSnippet": "No pnpm-lock.yaml, package-lock.json, or yarn.lock found",
+                "evidenceLine": None,
+                "confidence": "high",
+                "source": "live_github_scan",
+            },
         )
 
     # ── Check 7-9: workflow files ──
@@ -397,6 +498,15 @@ def _run_checks(file_map: dict[str, str]):
                     "Grant write scopes only where needed",
                     "Re-run the scan",
                 ],
+                evidence={
+                    "ruleId": "WORKFLOW_NO_PERMISSIONS",
+                    "evidenceType": "config_missing_field",
+                    "evidenceFile": wf,
+                    "evidenceSnippet": f"No 'permissions:' block found in {wf}",
+                    "evidenceLine": None,
+                    "confidence": "high",
+                    "source": "live_github_scan",
+                },
             )
         if re.search(r"permissions:\s*write-all", wf_content):
             fb.add(
@@ -410,6 +520,15 @@ def _run_checks(file_map: dict[str, str]):
                     "Add specific scopes per job (contents, pull-requests, etc.)",
                     "Re-run the scan",
                 ],
+                evidence={
+                    "ruleId": "WORKFLOW_WRITE_ALL",
+                    "evidenceType": "regex_match",
+                    "evidenceFile": wf,
+                    "evidenceSnippet": "permissions: write-all",
+                    "evidenceLine": None,
+                    "confidence": "high",
+                    "source": "live_github_scan",
+                },
             )
 
     # ── Check 10: .replit deployment block ──
@@ -427,12 +546,23 @@ def _run_checks(file_map: dict[str, str]):
                 "Set run = your start command",
                 "Press Publish and confirm it succeeds",
             ],
+            evidence={
+                "ruleId": "REPLIT_NO_DEPLOYMENT",
+                "evidenceType": "config_missing_field",
+                "evidenceFile": ".replit",
+                "evidenceSnippet": "[deployment] block absent from .replit",
+                "evidenceLine": None,
+                "confidence": "high",
+                "source": "live_github_scan",
+            },
         )
 
     # ── Check 11: unsafe execution patterns ──
     for path, content in file_map.items():
         for pat, label, sev in UNSAFE_PATTERNS:
-            if pat.search(content):
+            m = pat.search(content)
+            if m:
+                redacted = _redact(m.group(0))
                 fb.add(
                     category="Unsafe Shell Execution", severity=sev, file=path,
                     title=f"Use of {label} detected in {path}",
@@ -445,6 +575,15 @@ def _run_checks(file_map: dict[str, str]):
                         "Add a regression test that rejects malicious input",
                         "Re-run the scan",
                     ],
+                    evidence={
+                        "ruleId": "UNSAFE_EXEC",
+                        "evidenceType": "regex_match",
+                        "evidenceFile": path,
+                        "evidenceSnippet": redacted,
+                        "evidenceLine": None,
+                        "confidence": "medium",
+                        "source": "live_github_scan",
+                    },
                 )
 
     # ── Check 12: README presence + content ──
@@ -460,6 +599,15 @@ def _run_checks(file_map: dict[str, str]):
                 "Add: 'About' / 'Install' / 'Run' / 'Deploy' sections",
                 "Re-run the scan",
             ],
+            evidence={
+                "ruleId": "README_MISSING",
+                "evidenceType": "file_presence",
+                "evidenceFile": "README.md",
+                "evidenceSnippet": "README.md not found on default branch",
+                "evidenceLine": None,
+                "confidence": "high",
+                "source": "live_github_scan",
+            },
         )
     elif readme_content:
         readme_lower = readme_content.lower()
@@ -480,6 +628,15 @@ def _run_checks(file_map: dict[str, str]):
                     "Include the exact commands to install and run",
                     "Re-run the scan",
                 ],
+                evidence={
+                    "ruleId": "README_INCOMPLETE",
+                    "evidenceType": "content_check",
+                    "evidenceFile": readme_path,
+                    "evidenceSnippet": f"Missing sections: {', '.join(missing)}",
+                    "evidenceLine": None,
+                    "confidence": "medium",
+                    "source": "live_github_scan",
+                },
             )
 
     signals = {
@@ -616,15 +773,27 @@ def scan_repo(repo_input: str) -> dict[str, Any]:
                 "message": "Could not reach GitHub. Try again or use the sample scan."}
 
     if meta_r.status_code == 404:
-        return {"ok": False, "error": "REPO_NOT_FOUND",
-                "message": f"Public repo {owner}/{repo} not found."}
+        return {
+            "ok": False,
+            "error": "REPO_NOT_PUBLIC_OR_INACCESSIBLE",
+            "message": (
+                f"RepoGuard can scan public repos without login. "
+                f"'{owner}/{repo}' appears to be private, inaccessible, or does not exist. "
+                f"Check the repo name and make sure it's public."
+            ),
+        }
     if meta_r.status_code == 403:
-        body_lower = (meta_r.text or "").lower()
-        if "rate limit" in body_lower:
+        if _is_rate_limited(meta_r):
             return {"ok": False, "error": "RATE_LIMIT",
                     "message": "GitHub API rate limit reached. Wait a minute or use the sample scan."}
-        return {"ok": False, "error": "GITHUB_FORBIDDEN",
-                "message": "GitHub denied the request (403)."}
+        return {
+            "ok": False,
+            "error": "REPO_NOT_PUBLIC_OR_INACCESSIBLE",
+            "message": (
+                "RepoGuard can scan public repos without login. "
+                "This repo appears private, inaccessible, or requires authentication."
+            ),
+        }
     if meta_r.status_code == 451:
         return {"ok": False, "error": "BLOCKED",
                 "message": "Repository is blocked or unavailable."}
@@ -638,19 +807,21 @@ def scan_repo(repo_input: str) -> dict[str, Any]:
         return {"ok": False, "error": "GITHUB_ERROR", "message": "GitHub response was not JSON."}
 
     if meta.get("private"):
-        return {"ok": False, "error": "NOT_PUBLIC",
-                "message": "Repository is private. RepoGuard only scans public repos."}
+        return {
+            "ok": False,
+            "error": "REPO_NOT_PUBLIC_OR_INACCESSIBLE",
+            "message": "RepoGuard can scan public repos without login. This repo appears private, inaccessible, or requires authentication.",
+        }
 
     default_branch = meta.get("default_branch") or "main"
 
     file_map: dict[str, str] = {}
     files_seen: list[str] = []
+    wf_paths: list[str] = []
 
     # Fetch core files in parallel. Each request still has TIMEOUT (8s) so a
     # single hung path can't stall the whole scan; bounded concurrency keeps
-    # us well under GitHub's per-IP burst budget. Results are written into
-    # file_map in the same order they're returned, but downstream checks are
-    # order-independent so this stays deterministic.
+    # us well under GitHub's per-IP burst budget.
     try:
         rate_limited = False
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -670,8 +841,7 @@ def scan_repo(repo_input: str) -> dict[str, Any]:
             raise GitHubRateLimited()
 
         # Workflow listing is one extra request; do it serially since we need
-        # the list before we can fan out the per-file fetches. Then fan those
-        # out in parallel as well.
+        # the list before we can fan out the per-file fetches.
         wf_paths = _list_workflows(owner, repo, default_branch)
         if wf_paths:
             with ThreadPoolExecutor(max_workers=8) as pool:
@@ -700,23 +870,30 @@ def scan_repo(repo_input: str) -> dict[str, Any]:
     status = _derive_status(score, findings)
     gates = _derive_gates(signals, findings)
 
+    files_attempted = len(CORE_FILES) + len(wf_paths)
+    files_unavailable = max(0, files_attempted - len(files_seen))
+
     return {
         "ok": True,
         "repo": {
             "owner": owner,
             "name": repo,
             "fullName": f"{owner}/{repo}",
-            "url": meta.get("html_url"),
+            "url": f"https://github.com/{owner}/{repo}",
             "defaultBranch": default_branch,
-            "stars": meta.get("stargazers_count", 0),
+            "stars": meta.get("stargazers_count"),
             "language": meta.get("language"),
             "description": meta.get("description"),
         },
-        "scanTime": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "scanTime": datetime.now(timezone.utc).isoformat(),
         "filesScanned": files_seen,
+        "filesUnavailable": files_unavailable,
+        "rulesExecuted": RULES_EXECUTED,
         "findings": findings,
         "score": score,
-        "scoreProjected": 100,
+        "scoreProjected": min(100, score + sum(
+            SEVERITY_WEIGHTS.get(f["severity"], 0) for f in findings
+        )),
         "status": status,
         "gates": gates,
     }

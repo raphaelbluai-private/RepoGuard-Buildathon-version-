@@ -23,8 +23,10 @@ export interface ScanRepoMeta {
 export interface ScanResult {
   ok: true;
   repo: ScanRepoMeta;
-  scanTime: string;       // ISO Z
+  scanTime: string;           // ISO Z
   filesScanned: string[];
+  filesUnavailable?: number;  // files attempted but not fetchable (404 / timeout)
+  rulesExecuted?: number;     // number of distinct rule categories evaluated
   findings: Risk[];
   score: number;
   scoreProjected: number;
@@ -87,6 +89,14 @@ export interface Risk {
   whyMatters: string;
   howToFix: string;
   fixPlan: string[];
+  // Evidence fields — present on live-scan findings, optional on sample data
+  ruleId?: string | null;
+  evidenceType?: string | null;
+  evidenceFile?: string | null;
+  evidenceSnippet?: string | null;
+  evidenceLine?: number | null;
+  confidence?: string | null;
+  source?: string | null;
 }
 
 export interface SafetyGate {
@@ -108,6 +118,8 @@ export const SCORE_AFTER  = 96;
 export const PROJECT_NAME = "repoguard-warroom-demo";
 
 // Five deterministic seeded risks — one per category requested.
+// Evidence fields carry source: "sample_data" so the UI can distinguish
+// these from live-scan findings.
 export const SEEDED_RISKS: Risk[] = [
   {
     id: "r1",
@@ -129,6 +141,13 @@ export const SEEDED_RISKS: Risk[] = [
       "Revoke the leaked key at the provider",
       "Add a pre-commit hook that runs gitleaks on staged files",
     ],
+    ruleId: "SECRET_PATTERN",
+    evidenceType: "regex_match",
+    evidenceFile: "src/api/openai-client.ts",
+    evidenceSnippet: "sk-***REDACTED***Tg3z  (example data — not a real key)",
+    evidenceLine: 12,
+    confidence: "high",
+    source: "sample_data",
   },
   {
     id: "r2",
@@ -150,6 +169,13 @@ export const SEEDED_RISKS: Risk[] = [
       "Remove unused secrets from the secrets list",
       "Re-run the workflow and confirm it still passes",
     ],
+    ruleId: "WORKFLOW_NO_PERMISSIONS",
+    evidenceType: "config_missing_field",
+    evidenceFile: ".github/workflows/deploy.yml",
+    evidenceSnippet: "No 'permissions:' block found in deploy.yml  (example data)",
+    evidenceLine: null,
+    confidence: "high",
+    source: "sample_data",
   },
   {
     id: "r3",
@@ -171,6 +197,13 @@ export const SEEDED_RISKS: Risk[] = [
       "Update README under 'Required env vars'",
       "Re-run scan",
     ],
+    ruleId: "ENV_UNDOCUMENTED",
+    evidenceType: "code_pattern",
+    evidenceFile: ".env.example",
+    evidenceSnippet: "os.environ usage detected; .env.example absent  (example data)",
+    evidenceLine: null,
+    confidence: "medium",
+    source: "sample_data",
   },
   {
     id: "r4",
@@ -192,6 +225,13 @@ export const SEEDED_RISKS: Risk[] = [
       "Add a regression test that fails on `; rm -rf /`",
       "Re-run scan",
     ],
+    ruleId: "UNSAFE_EXEC",
+    evidenceType: "regex_match",
+    evidenceFile: "scripts/build.sh",
+    evidenceSnippet: "eval(  (example data — redacted)",
+    evidenceLine: 18,
+    confidence: "medium",
+    source: "sample_data",
   },
   {
     id: "r5",
@@ -213,6 +253,13 @@ export const SEEDED_RISKS: Risk[] = [
       "Set run = ['pnpm', 'start']",
       "Test build locally with `pnpm build`",
     ],
+    ruleId: "REPLIT_NO_DEPLOYMENT",
+    evidenceType: "config_missing_field",
+    evidenceFile: ".replit",
+    evidenceSnippet: "[deployment] block absent from .replit  (example data)",
+    evidenceLine: null,
+    confidence: "high",
+    source: "sample_data",
   },
 ];
 
@@ -238,12 +285,12 @@ export const GATES_AFTER: SafetyGate[] = [
 ];
 
 export const AGENT_BUILD_TRACE: AgentTraceStep[] = [
-  { step: "Prompt received",      detail: "War Room scan requested",                t: "00:00" },
-  { step: "Repo scanned",         detail: "127 files analyzed across 3 sources",    t: "00:08" },
-  { step: "Risks classified",     detail: "5 risks across 5 categories",            t: "00:11" },
-  { step: "Fix plan generated",   detail: "Deterministic fix plans per risk",       t: "00:14" },
-  { step: "Checklist validated",  detail: "7 safety gates evaluated",               t: "00:16" },
-  { step: "Report generated",     detail: "Safe-to-Ship report ready",              t: "00:18" },
+  { step: "Prompt received",      detail: "War Room scan requested",                          t: "00:00" },
+  { step: "Files fetched",        detail: "Core files and configs fetched from GitHub API",   t: "00:08" },
+  { step: "Risks classified",     detail: "Findings across all rule categories",              t: "00:11" },
+  { step: "Fix plan generated",   detail: "Deterministic fix plans per risk",                 t: "00:14" },
+  { step: "Checklist validated",  detail: "Safety gates evaluated",                           t: "00:16" },
+  { step: "Report generated",     detail: "Safe-to-Ship report ready",                        t: "00:18" },
 ];
 
 export const SEVERITY_COLOR: Record<Severity, string> = {
