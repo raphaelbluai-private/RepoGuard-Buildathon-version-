@@ -12,11 +12,7 @@ import {
   GATE_COLOR,
   GATE_ICON,
   CATEGORY_ICON,
-  RISK_STATUS_LABEL,
-  RISK_STATUS_COLOR,
-  coerceRiskStatus,
   type Risk,
-  type RiskStatus,
   type SafetyGate,
   type ScanResult,
   type ScanResponse,
@@ -33,13 +29,55 @@ type ScanMode =
   | { kind: "sample" }
   | { kind: "error"; error: string; message: string };
 
+// ─── Operator-aware finding disposition model ────────────────────────────────
+
+type FindingDisposition =
+  | "open"
+  | "fix_applied"
+  | "resolved"
+  | "review"
+  | "accepted_risk"
+  | "deferred"
+  | "manual_fix_required"
+  | "false_positive"
+  | "escalated";
+
+type FindingDispositions = Record<string, FindingDisposition>;
+
+const DISPOSITION_LABEL: Record<FindingDisposition, string> = {
+  open:                "Open",
+  fix_applied:         "Fix Applied",
+  resolved:            "Resolved",
+  review:              "Under Review",
+  accepted_risk:       "Accepted Risk",
+  deferred:            "Deferred",
+  manual_fix_required: "Manual Fix Needed",
+  false_positive:      "False Positive",
+  escalated:           "Escalated",
+};
+
+const DISPOSITION_COLOR: Record<FindingDisposition, string> = {
+  open:                "#FCA5A5",
+  fix_applied:         "#6EE7B7",
+  resolved:            "#6EE7B7",
+  review:              "#FCD34D",
+  accepted_risk:       "#FCD34D",
+  deferred:            "#93C5FD",
+  manual_fix_required: "#FCA5A5",
+  false_positive:      "#6EE7B7",
+  escalated:           "#FCA5A5",
+};
+
+// Cleared = finding no longer counts against the score or gate
+const CLEARED_DISPOSITIONS: FindingDisposition[] = ["fix_applied", "resolved", "false_positive"];
+
 const WAR_ROOM_STORAGE_KEY = "repoguard.warRoom.v2";
 
 type PersistedWarRoomState = {
   scanMode: ScanMode;
-  appliedFixes: Record<string, boolean>;
+  // backward-migration: appliedFixes (Record<string,boolean>) is migrated to findingDispositions on load
+  findingDispositions: FindingDispositions;
   selectedRiskId: string | null;
-  statusOverrides: Record<string, RiskStatus>;
   repoInput: string;
 };
 
@@ -63,18 +101,22 @@ function loadPersistedState(): PersistedWarRoomState | null {
       }
     }
 
+    // Migrate legacy appliedFixes: Record<string,boolean> → findingDispositions
+    let findingDispositions: FindingDispositions = {};
+    if (parsed.findingDispositions && typeof parsed.findingDispositions === "object") {
+      findingDispositions = parsed.findingDispositions as FindingDispositions;
+    } else if (parsed.appliedFixes && typeof parsed.appliedFixes === "object") {
+      // backward-compat migration: appliedFixes[id]===true → "fix_applied"
+      for (const [id, val] of Object.entries(parsed.appliedFixes)) {
+        if (val === true) findingDispositions[id] = "fix_applied";
+      }
+    }
+
     return {
       scanMode,
-      appliedFixes:
-        parsed.appliedFixes && typeof parsed.appliedFixes === "object"
-          ? parsed.appliedFixes as Record<string, boolean>
-          : {},
+      findingDispositions,
       selectedRiskId:
         typeof parsed.selectedRiskId === "string" ? parsed.selectedRiskId : null,
-      statusOverrides:
-        parsed.statusOverrides && typeof parsed.statusOverrides === "object"
-          ? (parsed.statusOverrides as Record<string, RiskStatus>)
-          : {},
       repoInput: typeof parsed.repoInput === "string" ? parsed.repoInput : "",
     };
   } catch {
@@ -158,13 +200,13 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
   // Lazy initializers: loadPersistedState runs exactly once on mount, never
   // on re-renders. This prevents localStorage reads on every render cycle and
-  // ensures repoInput / statusOverrides cannot be silently reset by a parent
-  // re-render that doesn't remount this component.
+  // ensures repoInput cannot be silently reset by a parent re-render that
+  // doesn't remount this component.
   const [scanMode, setScanMode] = useState<ScanMode>(
     () => loadPersistedState()?.scanMode ?? { kind: "idle" },
   );
-  const [appliedFixes, setAppliedFixes] = useState<Record<string, boolean>>(
-    () => loadPersistedState()?.appliedFixes ?? {},
+  const [findingDispositions, setFindingDispositions] = useState<FindingDispositions>(
+    () => loadPersistedState()?.findingDispositions ?? {},
   );
   const [selectedRiskId, setSelectedRiskId] = useState<string | null>(
     () => loadPersistedState()?.selectedRiskId ?? null,
@@ -175,11 +217,6 @@ export default function WarRoom({ theme }: WarRoomProps) {
     () => loadPersistedState()?.repoInput ?? "",
   );
   const inputRef = useRef<HTMLInputElement>(null);
-  // User-driven status overrides per finding id. Backend always emits "open";
-  // visitors can mark items Needs Review / Resolved Manually / Accepted Risk.
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, RiskStatus>>(
-    () => loadPersistedState()?.statusOverrides ?? {},
-  );
 
   // Restore cursor to the input after a failed scan so the user can immediately
   // correct the repo name without having to click back into the field.
@@ -189,9 +226,9 @@ export default function WarRoom({ theme }: WarRoomProps) {
     }
   }, [scanMode.kind]);
 
-  // Persist War Room state across page refreshes so the last scan, fix-applied
-  // status, selected risk, and triage overrides survive a reload. Transient
-  // states ("scanning", "error") are filtered out on load.
+  // Persist War Room state across page refreshes so the last scan, dispositions,
+  // and selected risk survive a reload. Transient states ("scanning", "error")
+  // are filtered out on load.
   // Debounced 300 ms so rapid repoInput keystrokes don't fire synchronous
   // localStorage writes that can stall the main thread and cause mobile focus loss.
   useEffect(() => {
@@ -202,9 +239,8 @@ export default function WarRoom({ theme }: WarRoomProps) {
           WAR_ROOM_STORAGE_KEY,
           JSON.stringify({
             scanMode,
-            appliedFixes,
+            findingDispositions,
             selectedRiskId,
-            statusOverrides,
             repoInput,
           }),
         );
@@ -213,14 +249,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       }
     }, 300);
     return () => window.clearTimeout(id);
-  }, [scanMode, appliedFixes, selectedRiskId, statusOverrides, repoInput]);
-
-  function setRiskStatus(id: string, s: RiskStatus) {
-    setStatusOverrides(prev => ({ ...prev, [id]: s }));
-  }
-  function effectiveStatus(r: Risk): RiskStatus {
-    return statusOverrides[r.id] ?? coerceRiskStatus(r.status);
-  }
+  }, [scanMode, findingDispositions, selectedRiskId, repoInput]);
 
   const hasScan = scanMode.kind === "real" || scanMode.kind === "sample";
   const isReal  = scanMode.kind === "real";
@@ -234,36 +263,76 @@ export default function WarRoom({ theme }: WarRoomProps) {
     isSample           ? SEEDED_RISKS :
                          [];
 
-  function isRiskFixApplied(id: string): boolean {
-    return Boolean(appliedFixes[id]);
+  // ── Disposition helpers ──────────────────────────────────────────────────
+  function getFindingDisposition(id: string): FindingDisposition {
+    return findingDispositions[id] ?? "open";
   }
-  function applyRiskFix(id: string): void {
-    setAppliedFixes(prev => ({ ...prev, [id]: true }));
+  function setFindingDisposition(id: string, d: FindingDisposition): void {
+    setFindingDispositions(prev => ({ ...prev, [id]: d }));
   }
-  function clearRiskFix(id: string): void {
-    setAppliedFixes(prev => {
+  function clearFindingDisposition(id: string): void {
+    setFindingDispositions(prev => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
   }
-  function allRiskFixesApplied(): boolean {
-    return hasScan && risks.length > 0 && risks.every(r => Boolean(appliedFixes[r.id]));
+
+  // CLEARED: fix_applied | resolved | false_positive
+  function isFindingCleared(id: string): boolean {
+    return CLEARED_DISPOSITIONS.includes(getFindingDisposition(id));
   }
-  const fixedRiskCount = risks.filter(r => isRiskFixApplied(r.id)).length;
-  const allFixesApplied = allRiskFixesApplied();
+
+  // BLOCKING: open | review | deferred | manual_fix_required | escalated |
+  //           accepted_risk on high/critical
+  function isFindingBlocking(risk: Risk): boolean {
+    if (isFindingCleared(risk.id)) return false;
+    const d = getFindingDisposition(risk.id);
+    if (d === "accepted_risk" && (risk.severity === "medium" || risk.severity === "low")) return false;
+    return true;
+  }
+
+  // ALLOWED WITH WARNING: accepted_risk on medium/low only
+  function isFindingWarning(risk: Risk): boolean {
+    const d = getFindingDisposition(risk.id);
+    return d === "accepted_risk" && (risk.severity === "medium" || risk.severity === "low");
+  }
+
+  function allFindingsClearedOrAllowed(): boolean {
+    return hasScan && risks.length > 0 && risks.every(r => !isFindingBlocking(r));
+  }
+
+  const clearedCount = risks.filter(r => isFindingCleared(r.id)).length;
+  const allCleared   = hasScan && risks.length > 0 && risks.every(r => isFindingCleared(r.id));
+  const hasCriticalHighBlocker = risks.some(r =>
+    isFindingBlocking(r) && (r.severity === "critical" || r.severity === "high"));
+  const hasMedLowBlocker = risks.some(r =>
+    isFindingBlocking(r) && (r.severity === "medium" || r.severity === "low"));
+  const hasAnyBlocker = hasCriticalHighBlocker || hasMedLowBlocker;
+
+  const dispositionSummary: Record<FindingDisposition, number> = {
+    open:                risks.filter(r => getFindingDisposition(r.id) === "open").length,
+    fix_applied:         risks.filter(r => getFindingDisposition(r.id) === "fix_applied").length,
+    resolved:            risks.filter(r => getFindingDisposition(r.id) === "resolved").length,
+    review:              risks.filter(r => getFindingDisposition(r.id) === "review").length,
+    accepted_risk:       risks.filter(r => getFindingDisposition(r.id) === "accepted_risk").length,
+    deferred:            risks.filter(r => getFindingDisposition(r.id) === "deferred").length,
+    manual_fix_required: risks.filter(r => getFindingDisposition(r.id) === "manual_fix_required").length,
+    false_positive:      risks.filter(r => getFindingDisposition(r.id) === "false_positive").length,
+    escalated:           risks.filter(r => getFindingDisposition(r.id) === "escalated").length,
+  };
 
   const baseGates: SafetyGate[] =
     isReal && realScan ? realScan.gates :
     isSample           ? GATES_BEFORE :
                          [];
 
-  // After fixes: real scans flip every gate to pass; sample uses GATES_AFTER.
+  // After all findings cleared: real scans flip every gate to pass; sample uses GATES_AFTER.
   const gates: SafetyGate[] =
-    !hasScan          ? [] :
-    !allFixesApplied  ? baseGates :
-    isReal            ? baseGates.map(g => ({ ...g, state: "pass" as const, detail: "Resolved post-fix" })) :
-                        GATES_AFTER;
+    !hasScan     ? [] :
+    !allCleared  ? baseGates :
+    isReal       ? baseGates.map(g => ({ ...g, state: "pass" as const, detail: "Resolved post-fix" })) :
+                   GATES_AFTER;
 
   const scoreBefore =
     isReal && realScan ? realScan.score :
@@ -275,13 +344,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
     isSample           ? SCORE_AFTER :
                          0;
 
+  // Interpolate score based on how many findings have been cleared
   const scoreCurrent = !hasScan
     ? 100
     : risks.length === 0
       ? scoreAfter
-      : allFixesApplied
+      : allCleared
         ? scoreAfter
-        : scoreBefore + Math.round((scoreAfter - scoreBefore) * (fixedRiskCount / risks.length));
+        : scoreBefore + Math.round((scoreAfter - scoreBefore) * (clearedCount / risks.length));
   const scoreDelta = Math.max(0, scoreAfter - scoreBefore);
 
   const projectName =
@@ -292,30 +362,31 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const repoUrl = isReal && realScan ? realScan.repo.url : null;
   const filesScanned = isReal && realScan ? realScan.filesScanned : [];
 
-  const realStatus =
-    isReal && realScan ? realScan.status :
-    isSample           ? (allFixesApplied ? "SAFE_TO_SHIP" : "SHIP_BLOCKED") :
-                         "SAFE_TO_SHIP";
-
+  // Status classification
+  // READY TO SHIP       — all findings cleared
+  // READY WITH ACCEPTED RISK — no blockers, only medium/low accepted_risk warnings
+  // NEEDS REVIEW        — only medium/low blockers remain
+  // SHIP BLOCKED        — any critical/high blocker exists
   const statusLabel =
-    !hasScan                                  ? "—" :
-    allFixesApplied                           ? "READY TO SHIP" :
-    realStatus === "SAFE_TO_SHIP"             ? "SAFE TO SHIP" :
-    realStatus === "NEEDS_REVIEW"             ? "NEEDS REVIEW" :
-                                                "SHIP BLOCKED";
+    !hasScan               ? "—" :
+    risks.length === 0     ? "SAFE TO SHIP" :
+    allCleared             ? "READY TO SHIP" :
+    !hasAnyBlocker         ? "READY WITH ACCEPTED RISK" :
+    hasCriticalHighBlocker ? "SHIP BLOCKED" :
+                             "NEEDS REVIEW";
 
   const statusColor =
-    !hasScan                                         ? "#FCA5A5" :
-    allFixesApplied || realStatus === "SAFE_TO_SHIP" ? "#6EE7B7" :
-    realStatus === "NEEDS_REVIEW"                    ? "#FCD34D" :
-                                                       "#FCA5A5";
+    !hasScan                                ? "#FCA5A5" :
+    (allCleared || !hasAnyBlocker)          ? "#6EE7B7" :
+    hasCriticalHighBlocker                  ? "#FCA5A5" :
+                                              "#FCD34D";
 
   const criticalCount = risks.filter(r => r.severity === "critical").length;
   const highCount     = risks.filter(r => r.severity === "high").length;
   const mediumCount   = risks.filter(r => r.severity === "medium").length;
   const lowCount      = risks.filter(r => r.severity === "low").length;
 
-  const safeToShip = hasScan && (allFixesApplied || realStatus === "SAFE_TO_SHIP");
+  const safeToShip = hasScan && (allCleared || !hasAnyBlocker);
   const topBlocker = risks.find(r => r.severity === "critical")
                   ?? risks.find(r => r.severity === "high")
                   ?? risks[0];
@@ -325,7 +396,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
     const trimmed = input.trim();
     if (!trimmed) return;
     setScanMode({ kind: "scanning", repo: trimmed });
-    setAppliedFixes({});
+    setFindingDispositions({});
     setSelectedRiskId(null);
 
     // Defensive watchdog: if the fetch never resolves (proxy hang, sleep,
@@ -416,16 +487,15 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   function handleSampleScan() {
     setScanMode({ kind: "sample" });
-    setAppliedFixes({});
+    setFindingDispositions({});
     setSelectedRiskId(null);
   }
 
   function handleResetAll() {
     setScanMode({ kind: "idle" });
-    setAppliedFixes({});
+    setFindingDispositions({});
     setSelectedRiskId(null);
     setRepoInput("");
-    setStatusOverrides({});
     setReportOpen(false);
     setRawOpen(false);
     if (typeof window !== "undefined") {
@@ -467,7 +537,10 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const lastScan = hasScan ? "Just now" : "—";
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
-  const selectedRiskFixApplied = selectedRisk ? isRiskFixApplied(selectedRisk.id) : false;
+  const selectedDisposition: FindingDisposition = selectedRisk
+    ? getFindingDisposition(selectedRisk.id)
+    : "open";
+  const selectedIsFixApplied = selectedDisposition === "fix_applied";
 
   const extensionGuardResult = useMemo(() => loadSanitizedExtensionGuardResult(), [reportOpen, rawOpen]);
 
@@ -739,7 +812,8 @@ export default function WarRoom({ theme }: WarRoomProps) {
                     evidenceLine: f.evidenceLine, confidence: f.confidence, source: f.source,
                   })),
                   gates: realScan.gates,
-                  appliedFixes,
+                  findingDispositions,
+                  dispositionSummary,
                   extensionGuard: extensionGuardResult
                     ? { included: true, ...extensionGuardResult }
                     : { included: false, status: "NOT_RUN", note: "No ExtensionGuard evaluation has been run in this browser session." },
@@ -764,14 +838,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
               One view of every risk an AI-built app must clear before it ships.
             </div>
           </div>
-          {fixedRiskCount > 0 && (
+          {clearedCount > 0 && (
             <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
               <button
                 className="wr-ghost-btn"
-                onClick={() => { setAppliedFixes({}); setSelectedRiskId(null); }}
-                title="Revert all applied fixes to show the unsafe state again"
+                onClick={() => { setFindingDispositions({}); setSelectedRiskId(null); }}
+                title="Reset all dispositions to open"
               >
-                ↻ Reset All Fixes
+                ↻ Reset All Dispositions
               </button>
             </div>
           )}
@@ -848,17 +922,16 @@ export default function WarRoom({ theme }: WarRoomProps) {
               <RiskCardView
                 key={r.id}
                 risk={r}
-                fixed={isRiskFixApplied(r.id)}
+                disposition={getFindingDisposition(r.id)}
                 selected={selectedRiskId === r.id}
                 onClick={() => setSelectedRiskId(id => id === r.id ? null : r.id)}
-                statusOverride={statusOverrides[r.id]}
                 theme={theme}
               />
             ))}
           </div>
         )}
 
-        {/* 4 + 6: What broke / Why / How to fix + Fix Plan */}
+        {/* 4 + 6: What broke / Why / How to fix + Disposition Controls */}
         {selectedRisk && (
           <div style={{
             marginTop: 14, padding: "16px 18px", borderRadius: 14,
@@ -897,52 +970,46 @@ export default function WarRoom({ theme }: WarRoomProps) {
               </div>
             )}
 
-            {/* Status selector — visitors can mark their own triage decisions. */}
-            <div style={{
-              marginTop: 12, paddingTop: 12,
-              borderTop: `1px solid ${divider}`,
-              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-            }}>
-              <span style={{
-                fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
-                textTransform: "uppercase",
-              }}>
-                Mark status
-              </span>
-              {(["open", "needs_review", "resolved_manually", "accepted_risk"] as RiskStatus[]).map(s => {
-                const active = effectiveStatus(selectedRisk) === s;
-                const c = RISK_STATUS_COLOR[s];
-                return (
-                  <button
-                    key={s}
-                    onClick={() => setRiskStatus(selectedRisk.id, s)}
-                    style={{
-                      padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700,
-                      cursor: "pointer", fontFamily: "inherit",
-                      background: active ? `${c}26` : (dark ? "rgba(255,255,255,0.04)" : "rgba(28,44,69,0.04)"),
-                      border: active ? `1px solid ${c}88` : `1px solid ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.10)"}`,
-                      color: active ? c : (dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)"),
-                    }}
-                  >
-                    {RISK_STATUS_LABEL[s]}
-                  </button>
-                );
-              })}
-            </div>
-
+            {/* ── Disposition Controls ───────────────────────────────── */}
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${divider}` }}>
-              {!selectedRiskFixApplied ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
-                  <button className="wr-cta" onClick={() => applyRiskFix(selectedRisk.id)}>
-                    ✦ Generate Fix Plan
+              {/* Current disposition badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#C49A47", fontWeight: 800,
+                  letterSpacing: "0.10em", textTransform: "uppercase" }}>
+                  Disposition
+                </span>
+                <span style={{
+                  padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800,
+                  background: `${DISPOSITION_COLOR[selectedDisposition]}20`,
+                  border: `1px solid ${DISPOSITION_COLOR[selectedDisposition]}66`,
+                  color: DISPOSITION_COLOR[selectedDisposition],
+                  letterSpacing: "0.04em",
+                }}>
+                  {DISPOSITION_LABEL[selectedDisposition]}
+                </span>
+                {selectedDisposition !== "open" && (
+                  <button className="wr-ghost-btn"
+                    onClick={() => clearFindingDisposition(selectedRisk.id)}
+                    style={{ padding: "4px 10px", fontSize: 11 }}>
+                    Clear
                   </button>
-                  <div style={{ fontSize: 12, color: subText, lineHeight: 1.5 }}>
-                    Generates the deterministic fix plan for this risk and updates the
-                    Safe-to-Ship Checklist + Integrity Score.
+                )}
+              </div>
+
+              {/* Fix It Now (instant repair) */}
+              {!selectedIsFixApplied ? (
+                <div style={{ marginBottom: 12 }}>
+                  <button className="wr-cta"
+                    onClick={() => setFindingDisposition(selectedRisk.id, "fix_applied")}>
+                    ✦ Fix It Now
+                  </button>
+                  <div style={{ fontSize: 12, color: subText, lineHeight: 1.5, marginTop: 6 }}>
+                    Applies the deterministic fix plan and updates the Safe-to-Ship
+                    Checklist + Integrity Score.
                   </div>
                 </div>
               ) : (
-                <div style={{ animation: "wrPopIn 240ms ease both" }}>
+                <div style={{ animation: "wrPopIn 240ms ease both", marginBottom: 12 }}>
                   <div style={{
                     display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
                     fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
@@ -955,10 +1022,6 @@ export default function WarRoom({ theme }: WarRoomProps) {
                       color: "#6EE7B7", fontSize: 11, fontWeight: 800,
                     }}>✓</span>
                     Deterministic Fix Plan · Applied
-                    <button className="wr-ghost-btn" onClick={() => clearRiskFix(selectedRisk.id)}
-                      style={{ padding: "5px 10px", fontSize: 12 }}>
-                      Reset This Fix
-                    </button>
                   </div>
                   <ol style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7 }}>
                     {selectedRisk.fixPlan.map((step, i) => (
@@ -967,6 +1030,39 @@ export default function WarRoom({ theme }: WarRoomProps) {
                   </ol>
                 </div>
               )}
+
+              {/* Other disposition actions */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {(
+                  [
+                    { d: "resolved"            as FindingDisposition, label: "Mark Resolved" },
+                    { d: "review"              as FindingDisposition, label: "Mark for Review" },
+                    { d: "accepted_risk"       as FindingDisposition, label: "Accept Risk" },
+                    { d: "deferred"            as FindingDisposition, label: "Defer" },
+                    { d: "manual_fix_required" as FindingDisposition, label: "Needs Manual Fix" },
+                    { d: "false_positive"      as FindingDisposition, label: "False Positive" },
+                    { d: "escalated"           as FindingDisposition, label: "Escalate" },
+                  ] as { d: FindingDisposition; label: string }[]
+                ).map(({ d, label }) => {
+                  const active = selectedDisposition === d;
+                  const c = DISPOSITION_COLOR[d];
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => setFindingDisposition(selectedRisk.id, d)}
+                      style={{
+                        padding: "6px 12px", borderRadius: 999, fontSize: 12, fontWeight: 700,
+                        cursor: "pointer", fontFamily: "inherit",
+                        background: active ? `${c}26` : (dark ? "rgba(255,255,255,0.04)" : "rgba(28,44,69,0.04)"),
+                        border: active ? `1px solid ${c}88` : `1px solid ${dark ? "rgba(255,255,255,0.10)" : "rgba(28,44,69,0.10)"}`,
+                        color: active ? c : (dark ? "rgba(255,255,255,0.65)" : "rgba(28,44,69,0.65)"),
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -994,7 +1090,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
             // Pre-fix: agent has scanned + classified + planned + validated checklist (steps 1-5).
             // Post-fix: agent has also generated the final report (step 6).
             // Pre-scan: nothing reached.
-            const milestoneIndex = !hasScan ? -1 : (allFixesApplied ? 5 : 4);
+            const milestoneIndex = !hasScan ? -1 : (allCleared ? 5 : 4);
             const reached = i <= milestoneIndex;
             return (
               <TraceStepRow key={i} step={step} reached={reached} isLast={i === AGENT_BUILD_TRACE.length - 1}
@@ -1034,9 +1130,10 @@ export default function WarRoom({ theme }: WarRoomProps) {
           risks={risks}
           gates={gates}
           scoreBefore={scoreBefore}
-          scoreAfter={allFixesApplied ? scoreAfter : scoreCurrent}
-          appliedFixes={appliedFixes}
-          allFixesApplied={allFixesApplied}
+          scoreAfter={allCleared ? scoreAfter : scoreCurrent}
+          findingDispositions={findingDispositions}
+          dispositionSummary={dispositionSummary}
+          allCleared={allCleared}
           statusLabel={statusLabel}
           statusColor={statusColor}
           isSample={isSample}
@@ -1098,16 +1195,17 @@ function ScoreBlock({ label, value, color, theme }: {
   );
 }
 
-function RiskCardView({ risk, fixed, selected, onClick, statusOverride, theme }: {
-  risk: Risk; fixed: boolean; selected: boolean; onClick: () => void;
-  statusOverride?: RiskStatus; theme: string;
+function RiskCardView({ risk, disposition, selected, onClick, theme }: {
+  risk: Risk;
+  disposition: FindingDisposition;
+  selected: boolean;
+  onClick: () => void;
+  theme: string;
 }) {
   const dark = theme !== "light";
-  const baseStatus: RiskStatus = statusOverride ?? coerceRiskStatus(risk.status);
-  const status: RiskStatus = fixed ? "resolved_manually" : baseStatus;
   const sevColor = SEVERITY_COLOR[risk.severity];
-  const statusColor = RISK_STATUS_COLOR[status];
-  const statusLabel = RISK_STATUS_LABEL[status];
+  const dispColor = DISPOSITION_COLOR[disposition];
+  const dispLabel = DISPOSITION_LABEL[disposition];
 
   return (
     <div className="wr-risk-card" onClick={onClick} style={{
@@ -1155,14 +1253,14 @@ function RiskCardView({ risk, fixed, selected, onClick, statusOverride, theme }:
         <span style={{
           display: "inline-flex", alignItems: "center", gap: 6,
           padding: "3px 8px", borderRadius: 999,
-          background: `${statusColor}18`, border: `1px solid ${statusColor}44`,
-          color: statusColor, fontSize: 11, fontWeight: 700,
+          background: `${dispColor}18`, border: `1px solid ${dispColor}44`,
+          color: dispColor, fontSize: 11, fontWeight: 700,
         }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor }} />
-          {statusLabel}
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: dispColor }} />
+          {dispLabel}
         </span>
         <span style={{ fontSize: 11, color: dark ? "rgba(255,255,255,0.40)" : "rgba(28,44,69,0.50)" }}>
-          {selected ? "click to close" : "click for fix plan →"}
+          {selected ? "click to close" : "click to triage →"}
         </span>
       </div>
     </div>
@@ -1292,8 +1390,8 @@ function EmptyState({ title, body, theme }: { title: string; body: string; theme
 
 function SafeToShipReport({
   onClose, theme, projectName, repoUrl, scanTimeISO, filesScanned,
-  risks, gates, scoreBefore, scoreAfter, appliedFixes, allFixesApplied,
-  statusLabel, statusColor, isSample, rulesExecuted, extensionGuardResult,
+  risks, gates, scoreBefore, scoreAfter, findingDispositions, dispositionSummary,
+  allCleared, statusLabel, statusColor, isSample, rulesExecuted, extensionGuardResult,
 }: {
   onClose: () => void;
   theme: string;
@@ -1305,8 +1403,9 @@ function SafeToShipReport({
   gates: SafetyGate[];
   scoreBefore: number;
   scoreAfter: number;
-  appliedFixes: Record<string, boolean>;
-  allFixesApplied: boolean;
+  findingDispositions: FindingDispositions;
+  dispositionSummary: Record<FindingDisposition, number>;
+  allCleared: boolean;
   statusLabel: string;
   statusColor: string;
   isSample: boolean;
@@ -1320,10 +1419,20 @@ function SafeToShipReport({
   const border = dark ? "1px solid rgba(196,154,71,0.25)" : "1px solid rgba(28,44,69,0.12)";
   const divider = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.08)";
 
-  function isReportRiskFixed(id: string): boolean {
-    return Boolean(appliedFixes[id]);
+  function getDisp(id: string): FindingDisposition {
+    return findingDispositions[id] ?? "open";
   }
-  const criticalBlockers = risks.filter(r => r.severity === "critical" && !isReportRiskFixed(r.id));
+  function isCleared(id: string): boolean {
+    return CLEARED_DISPOSITIONS.includes(getDisp(id));
+  }
+
+  const criticalBlockers = risks.filter(r => {
+    if (isCleared(r.id)) return false;
+    const d = getDisp(r.id);
+    if (d === "accepted_risk" && (r.severity === "medium" || r.severity === "low")) return false;
+    return r.severity === "critical";
+  });
+
   const scanTime = new Date(scanTimeISO).toLocaleString();
   const slug = projectName.replace(/[^A-Za-z0-9._-]+/g, "_") || "scan";
 
@@ -1337,7 +1446,7 @@ function SafeToShipReport({
       `Scan mode:     ${scanMode}`,
       `Scan time:     ${scanTime}`,
       `Status:        ${statusLabel}`,
-      `Integrity:     ${scoreBefore}% → ${scoreAfter}%${allFixesApplied ? "  [post-fix]" : ""}`,
+      `Integrity:     ${scoreBefore}% → ${scoreAfter}%${allCleared ? "  [post-fix]" : ""}`,
       `Files scanned: ${filesScanned.length || "—"}`,
       rulesExecuted != null ? `Rules executed: ${rulesExecuted}` : "",
       ``,
@@ -1345,7 +1454,8 @@ function SafeToShipReport({
     ].filter(l => l !== undefined);
     if (risks.length === 0) lines.push("  (none)");
     risks.forEach(r => {
-      lines.push(`  [${r.severity.toUpperCase()}] ${r.category} · ${r.file}`);
+      const d = getDisp(r.id);
+      lines.push(`  [${r.severity.toUpperCase()}] ${r.category} · ${r.file}  [${DISPOSITION_LABEL[d]}]`);
       lines.push(`      ${r.shortExplanation}`);
     });
     lines.push("");
@@ -1405,8 +1515,9 @@ function SafeToShipReport({
       scanMode: isSample ? "sample" : "live",
       sample: isSample,
       rulesExecuted: rulesExecuted ?? null,
-      score: { before: scoreBefore, after: scoreAfter, postFix: allFixesApplied },
-      appliedFixes,
+      score: { before: scoreBefore, after: scoreAfter, postFix: allCleared },
+      findingDispositions,
+      dispositionSummary,
       status: statusLabel,
       filesScanned,
       findings: risks,
@@ -1425,10 +1536,10 @@ function SafeToShipReport({
   }
 
   function handleDownloadCSV() {
-    const header = ["severity", "category", "file", "title", "what_broke", "why_matters", "how_to_fix"];
+    const header = ["severity", "category", "file", "title", "what_broke", "why_matters", "how_to_fix", "disposition"];
     const rows = risks.map(r => [
       r.severity, r.category, r.file, r.shortExplanation,
-      r.whatBroke, r.whyMatters, r.howToFix,
+      r.whatBroke, r.whyMatters, r.howToFix, DISPOSITION_LABEL[getDisp(r.id)],
     ].map(csvEscape).join(","));
     const csv = [header.join(","), ...rows].join("\n");
     downloadBlob(csv, "text/csv;charset=utf-8;", `repoguard-${slug}.csv`);
@@ -1442,7 +1553,7 @@ function SafeToShipReport({
     if (repoUrl) lines.push(`**Repository:** <${repoUrl}>`);
     lines.push(`**Scan time:** ${scanTime}`);
     lines.push(`**Status:** ${statusLabel}`);
-    lines.push(`**Integrity score:** ${scoreBefore}% → ${scoreAfter}%${allFixesApplied ? "  _(post-fix)_" : ""}`);
+    lines.push(`**Integrity score:** ${scoreBefore}% → ${scoreAfter}%${allCleared ? "  _(post-fix)_" : ""}`);
     if (filesScanned.length > 0) lines.push(`**Files scanned:** ${filesScanned.length}`);
     lines.push("");
 
@@ -1461,13 +1572,14 @@ function SafeToShipReport({
       lines.push("_No findings._");
     } else {
       lines.push("");
-      lines.push("| Severity | Category | File | Finding |");
-      lines.push("| --- | --- | --- | --- |");
+      lines.push("| Severity | Category | File | Finding | Disposition |");
+      lines.push("| --- | --- | --- | --- | --- |");
       risks.forEach(r => {
-        const sev = isReportRiskFixed(r.id) ? "RESOLVED" : r.severity.toUpperCase();
+        const d = getDisp(r.id);
+        const sev = isCleared(r.id) ? "RESOLVED" : r.severity.toUpperCase();
         const file = r.file.replace(/\|/g, "\\|");
         const finding = r.shortExplanation.replace(/\|/g, "\\|");
-        lines.push(`| ${sev} | ${r.category} | \`${file}\` | ${finding} |`);
+        lines.push(`| ${sev} | ${r.category} | \`${file}\` | ${finding} | ${DISPOSITION_LABEL[d]} |`);
       });
     }
     lines.push("");
@@ -1590,7 +1702,7 @@ function SafeToShipReport({
              modal. The severity badge keeps its place on the right. */
           .wr-modal-row {
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr) auto;
+            grid-template-columns: auto minmax(0, 1fr) auto auto;
             gap: 10px; align-items: center;
           }
           @media (max-width: 540px) {
@@ -1723,12 +1835,14 @@ function SafeToShipReport({
         <div style={{ display: "grid", gap: 6 }}>
           {risks.map(r => {
             const sev = SEVERITY_COLOR[r.severity];
-            const resolved = isReportRiskFixed(r.id);
+            const d = getDisp(r.id);
+            const cleared = isCleared(r.id);
+            const dc = DISPOSITION_COLOR[d];
             return (
               <div key={r.id} className="wr-modal-row" style={{
                 padding: "8px 12px", borderRadius: 10,
                 background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
-                borderLeft: `3px solid ${resolved ? "#6EE7B7" : sev}`,
+                borderLeft: `3px solid ${cleared ? "#6EE7B7" : sev}`,
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{r.category}</span>
                 <span className="wr-modal-row-mid" style={{ fontSize: 12, color: sub, fontFamily: "monospace",
@@ -1737,15 +1851,38 @@ function SafeToShipReport({
                 </span>
                 <span style={{
                   padding: "2px 7px", borderRadius: 999, fontSize: 10, fontWeight: 800,
-                  letterSpacing: "0.06em", background: resolved ? "rgba(110,231,183,0.18)" : `${sev}20`,
-                  border: `1px solid ${resolved ? "rgba(110,231,183,0.50)" : `${sev}55`}`,
-                  color: resolved ? "#6EE7B7" : sev, textTransform: "uppercase",
+                  letterSpacing: "0.06em", background: cleared ? "rgba(110,231,183,0.18)" : `${sev}20`,
+                  border: `1px solid ${cleared ? "rgba(110,231,183,0.50)" : `${sev}55`}`,
+                  color: cleared ? "#6EE7B7" : sev, textTransform: "uppercase",
                 }}>
-                  {resolved ? "RESOLVED" : r.severity}
+                  {cleared ? "RESOLVED" : r.severity}
+                </span>
+                <span style={{
+                  padding: "2px 7px", borderRadius: 999, fontSize: 10, fontWeight: 700,
+                  background: `${dc}18`, border: `1px solid ${dc}44`, color: dc,
+                }}>
+                  {DISPOSITION_LABEL[d]}
                 </span>
               </div>
             );
           })}
+        </div>
+
+        {/* Disposition summary */}
+        <SectionTitle>Disposition Summary</SectionTitle>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {(Object.keys(dispositionSummary) as FindingDisposition[])
+            .filter(d => dispositionSummary[d] > 0)
+            .map(d => (
+              <span key={d} style={{
+                padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700,
+                background: `${DISPOSITION_COLOR[d]}18`,
+                border: `1px solid ${DISPOSITION_COLOR[d]}44`,
+                color: DISPOSITION_COLOR[d],
+              }}>
+                {DISPOSITION_LABEL[d]}: {dispositionSummary[d]}
+              </span>
+            ))}
         </div>
 
         {/* Recommended fixes */}
