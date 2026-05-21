@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { EXTENSION_GUARD_STORAGE_KEY } from "./ExtensionGuardPanel";
 import {
   SEEDED_RISKS,
   GATES_BEFORE,
@@ -118,6 +119,37 @@ const SectionLabel = React.memo(function SectionLabel({ children }: { children: 
 // Stable style object so React.memo on Card can pass the shallow-equality check
 // for the `style` prop even when the parent re-renders (e.g. every keystroke).
 const SCAN_CARD_STYLE: React.CSSProperties = { marginBottom: 14 };
+
+// ─── ExtensionGuard sanitized result type ─────────────────────────────────────
+interface SanitizedExtensionFinding {
+  id: string; extensionId: string; publisher: string; name: string;
+  version: string | null; severity: string; ruleId: string;
+  whatBroke: string; whyMatters: string; howToFix: string;
+  confidence: string; evidence: string;
+}
+interface SanitizedExtensionGuardResult {
+  version: string; scanMode: string; scanTime: string;
+  extensionsScanned: number; highRiskCount: number; unknownPublisherCount: number;
+  toolingRiskScore: number; status: string;
+  findings: SanitizedExtensionFinding[]; recommendations: string[];
+}
+
+function loadSanitizedExtensionGuardResult(): SanitizedExtensionGuardResult | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem(EXTENSION_GUARD_STORAGE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (
+      typeof obj !== "object" || obj === null ||
+      typeof obj.version !== "string" ||
+      typeof obj.scanTime !== "string" ||
+      typeof obj.status !== "string" ||
+      !Array.isArray(obj.findings)
+    ) return null;
+    return obj as SanitizedExtensionGuardResult;
+  } catch { return null; }
+}
 
 export default function WarRoom({ theme }: WarRoomProps) {
   const dark = theme !== "light";
@@ -408,6 +440,8 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
 
+  const extensionGuardResult = useMemo(() => loadSanitizedExtensionGuardResult(), [reportOpen, rawOpen]);
+
   // Memoised so the string reference is identical between keystrokes — React
   // never needs to touch the <style> DOM node while the user is typing, which
   // prevents browser CSS re-parses that can briefly disrupt :focus state.
@@ -676,6 +710,9 @@ export default function WarRoom({ theme }: WarRoomProps) {
                     evidenceLine: f.evidenceLine, confidence: f.confidence, source: f.source,
                   })),
                   gates: realScan.gates,
+                  extensionGuard: extensionGuardResult
+                    ? { included: true, ...extensionGuardResult }
+                    : { included: false, status: "NOT_RUN", note: "No ExtensionGuard evaluation has been run in this browser session." },
                 }, null, 2)}
               </pre>
             </div>
@@ -969,6 +1006,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
           statusColor={statusColor}
           isSample={isSample}
           rulesExecuted={isReal && realScan ? realScan.rulesExecuted : undefined}
+          extensionGuardResult={extensionGuardResult}
         />
       )}
     </div>
@@ -1220,7 +1258,7 @@ function EmptyState({ title, body, theme }: { title: string; body: string; theme
 function SafeToShipReport({
   onClose, theme, projectName, repoUrl, scanTimeISO, filesScanned,
   risks, gates, scoreBefore, scoreAfter, fixesApplied,
-  statusLabel, statusColor, isSample, rulesExecuted,
+  statusLabel, statusColor, isSample, rulesExecuted, extensionGuardResult,
 }: {
   onClose: () => void;
   theme: string;
@@ -1237,6 +1275,7 @@ function SafeToShipReport({
   statusColor: string;
   isSample: boolean;
   rulesExecuted?: number;
+  extensionGuardResult?: SanitizedExtensionGuardResult | null;
 }) {
   const dark = theme !== "light";
   const cardBg = dark ? "rgba(18,24,36,0.98)" : "#FFFFFF";
@@ -1275,6 +1314,24 @@ function SafeToShipReport({
     gates.forEach(g => {
       lines.push(`  ${g.state.toUpperCase().padEnd(8)} ${g.label}${g.detail ? `  — ${g.detail}` : ""}`);
     });
+    lines.push("");
+    lines.push("ExtensionGuard · Developer Tooling Supply Chain Risk:");
+    if (!extensionGuardResult) {
+      lines.push("  Not run in this browser session.");
+    } else {
+      lines.push(`  Status:                  ${extensionGuardResult.status}`);
+      lines.push(`  Tooling Risk Score:      ${extensionGuardResult.toolingRiskScore}%`);
+      lines.push(`  Extensions Scanned:      ${extensionGuardResult.extensionsScanned}`);
+      lines.push(`  High Risk Count:         ${extensionGuardResult.highRiskCount}`);
+      lines.push(`  Unknown Publisher Count: ${extensionGuardResult.unknownPublisherCount}`);
+      lines.push(`  Findings (${extensionGuardResult.findings.length}):`);
+      extensionGuardResult.findings.forEach(f => {
+        lines.push(`    [${f.severity.toUpperCase()}] ${f.extensionId} · ${f.ruleId}`);
+        lines.push(`        ${f.whatBroke}`);
+      });
+      lines.push("  Recommendations:");
+      extensionGuardResult.recommendations.forEach(r => lines.push(`    - ${r}`));
+    }
     return lines.join("\n");
   }
 
@@ -1314,6 +1371,9 @@ function SafeToShipReport({
       filesScanned,
       findings: risks,
       checklist: gates,
+      extensionGuard: extensionGuardResult
+        ? { included: true, ...extensionGuardResult }
+        : { included: false, status: "NOT_RUN", note: "No ExtensionGuard evaluation has been run in this browser session." },
     };
     downloadBlob(JSON.stringify(payload, null, 2), "application/json",
       `repoguard-${slug}.json`);
@@ -1415,6 +1475,41 @@ function SafeToShipReport({
     }
     lines.push("");
 
+    lines.push(`## ExtensionGuard · Developer Tooling Supply Chain Risk`);
+    if (!extensionGuardResult) {
+      lines.push("_Not run in this browser session._");
+    } else {
+      lines.push("");
+      lines.push(`| Field | Value |`);
+      lines.push(`| --- | --- |`);
+      lines.push(`| Status | **${extensionGuardResult.status}** |`);
+      lines.push(`| Tooling Risk Score | ${extensionGuardResult.toolingRiskScore}% |`);
+      lines.push(`| Extensions Scanned | ${extensionGuardResult.extensionsScanned} |`);
+      lines.push(`| High Risk Count | ${extensionGuardResult.highRiskCount} |`);
+      lines.push(`| Unknown Publisher Count | ${extensionGuardResult.unknownPublisherCount} |`);
+      if (extensionGuardResult.findings.length > 0) {
+        lines.push("");
+        lines.push("**Findings:**");
+        lines.push("");
+        lines.push("| Severity | Extension ID | Rule | Evidence |");
+        lines.push("| --- | --- | --- | --- |");
+        extensionGuardResult.findings.forEach(f => {
+          lines.push(`| ${f.severity.toUpperCase()} | \`${f.extensionId}\` | ${f.ruleId} | ${f.evidence.replace(/\|/g, "\\|")} |`);
+        });
+        lines.push("");
+        lines.push("**Fix Plans:**");
+        extensionGuardResult.findings.forEach(f => {
+          lines.push("");
+          lines.push(`- **${f.extensionId}** (${f.ruleId}): ${f.howToFix}`);
+        });
+      }
+      if (extensionGuardResult.recommendations.length > 0) {
+        lines.push("");
+        lines.push("**Recommendations:**");
+        extensionGuardResult.recommendations.forEach(r => lines.push(`- ${r}`));
+      }
+    }
+    lines.push("");
     lines.push("---");
     lines.push(`_Generated by RepoGuard${isSample ? " · SAMPLE DATA — not a real repository scan" : " · LIVE SCAN from public GitHub API"}._`);
     return lines.join("\n");
@@ -1655,6 +1750,56 @@ function SafeToShipReport({
             );
           })}
         </div>
+
+        {/* ExtensionGuard section */}
+        <SectionTitle>ExtensionGuard · Developer Tooling Supply Chain Risk</SectionTitle>
+        {!extensionGuardResult ? (
+          <div style={{ fontSize: 13, color: sub, fontStyle: "italic" }}>
+            Not run in this browser session. Open the ExtensionGuard tab, paste your VS Code extension inventory, and run the evaluation to include supply-chain risk data here.
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+              <span style={{ fontSize: 12, color: sub }}>Status: <b style={{ color: extensionGuardResult.status === "LOW" ? "#6EE7B7" : extensionGuardResult.status === "REVIEW" ? "#FCD34D" : "#FCA5A5" }}>{extensionGuardResult.status}</b></span>
+              <span style={{ fontSize: 12, color: sub }}>Tooling Risk Score: <b style={{ color: text }}>{extensionGuardResult.toolingRiskScore}%</b></span>
+              <span style={{ fontSize: 12, color: sub }}>Extensions Scanned: <b style={{ color: text }}>{extensionGuardResult.extensionsScanned}</b></span>
+              <span style={{ fontSize: 12, color: sub }}>High Risk: <b style={{ color: text }}>{extensionGuardResult.highRiskCount}</b></span>
+              <span style={{ fontSize: 12, color: sub }}>Unknown Publisher: <b style={{ color: text }}>{extensionGuardResult.unknownPublisherCount}</b></span>
+            </div>
+            {extensionGuardResult.findings.length > 0 && (
+              <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+                {extensionGuardResult.findings.map(f => {
+                  const sevColor = f.severity === "critical" || f.severity === "high" ? "#FCA5A5" : f.severity === "medium" ? "#FCD34D" : "#93C5FD";
+                  return (
+                    <div key={f.id} style={{ padding: "8px 12px", borderRadius: 10,
+                      background: dark ? "rgba(255,255,255,0.03)" : "rgba(28,44,69,0.04)",
+                      borderLeft: `3px solid ${sevColor}` }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "monospace" }}>{f.extensionId}</span>
+                        <span style={{ padding: "1px 6px", borderRadius: 999, fontSize: 10, fontWeight: 800,
+                          background: `${sevColor}20`, border: `1px solid ${sevColor}55`, color: sevColor,
+                          textTransform: "uppercase", letterSpacing: "0.06em" }}>{f.severity}</span>
+                        <span style={{ fontSize: 11, color: sub }}>{f.ruleId}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: sub, lineHeight: 1.5 }}>{f.whatBroke}</div>
+                      <div style={{ fontSize: 11, color: sub, fontFamily: "monospace", marginTop: 2, wordBreak: "break-all" }}>Evidence: {f.evidence}</div>
+                      <div style={{ fontSize: 12, color: "#6EE7B7", marginTop: 4 }}>{f.howToFix}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {extensionGuardResult.recommendations.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: "#C49A47", fontWeight: 700, textTransform: "uppercase",
+                  letterSpacing: "0.08em", marginBottom: 6 }}>Recommendations</div>
+                <ul style={{ margin: 0, paddingLeft: 20, color: sub, fontSize: 12.5, lineHeight: 1.7 }}>
+                  {extensionGuardResult.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer actions — exports + close */}
         <div style={{ marginTop: 22, display: "flex", justifyContent: "space-between",

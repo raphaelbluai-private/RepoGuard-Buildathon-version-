@@ -6,7 +6,9 @@ type Props = {
   onResultChange?: (result: ExtensionGuardResult | null) => void;
 };
 
-const SAMPLE = `ms-python.python@2026.1.0
+export const EXTENSION_GUARD_STORAGE_KEY = "repoguard.extensionGuard.v0.2.result";
+
+export const SAMPLE_EXTENSION_INVENTORY = `ms-python.python@2026.1.0
 dbaeumer.vscode-eslint@3.0.16
 esbenp.prettier-vscode@11.0.0
 github.copilot@1.301.0
@@ -78,11 +80,39 @@ export default function ExtensionGuardPanel({ theme, onResultChange }: Props) {
     setResult(next);
     setSelectedId(next.findings[0]?.id ?? null);
     onResultChange?.(next);
+    try {
+      const sanitized = {
+        version: "0.2.0",
+        scanMode: next.scanMode,
+        scanTime: next.scanTime,
+        extensionsScanned: next.extensionsScanned,
+        highRiskCount: next.highRiskCount,
+        unknownPublisherCount: next.unknownPublisherCount,
+        toolingRiskScore: next.toolingRiskScore,
+        status: next.status,
+        findings: next.findings.map(f => ({
+          id: f.id,
+          extensionId: f.extensionId,
+          publisher: f.publisher,
+          name: f.name,
+          version: f.version,
+          severity: f.severity,
+          ruleId: f.ruleId,
+          whatBroke: f.whatBroke,
+          whyMatters: f.whyMatters,
+          howToFix: f.howToFix,
+          confidence: f.confidence,
+          evidence: f.evidence,
+        })),
+        recommendations: next.recommendations,
+      };
+      window.localStorage.setItem(EXTENSION_GUARD_STORAGE_KEY, JSON.stringify(sanitized));
+    } catch { /* localStorage unavailable */ }
   }
 
   function loadSample() {
-    setInput(SAMPLE);
-    runScan(SAMPLE);
+    setInput(SAMPLE_EXTENSION_INVENTORY);
+    runScan(SAMPLE_EXTENSION_INVENTORY);
   }
 
   function reset() {
@@ -90,6 +120,7 @@ export default function ExtensionGuardPanel({ theme, onResultChange }: Props) {
     setResult(null);
     setSelectedId(null);
     onResultChange?.(null);
+    try { window.localStorage.removeItem(EXTENSION_GUARD_STORAGE_KEY); } catch { /* ignore */ }
   }
 
   return (

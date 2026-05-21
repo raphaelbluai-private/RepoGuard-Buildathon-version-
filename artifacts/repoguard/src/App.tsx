@@ -4,8 +4,9 @@ import { useIsMobile } from "./hooks/use-mobile";
 import WarRoomFeed from "./components/WarRoomFeed";
 import RepoGuardCore, { type RGStatus } from "./components/RepoGuardCore";
 import WarRoom from "./components/WarRoom";
+import ExtensionGuardPanel from "./components/ExtensionGuardPanel";
 
-const pages = ["Command", "War Room", "Breach", "Correction", "Resolution"];
+const pages = ["Command", "War Room", "ExtensionGuard", "Breach", "Correction", "Resolution"];
 
 // ─── Shared AudioContext ─────────────────────────────────────────────────────
 let _ctx: AudioContext | null = null;
@@ -1577,6 +1578,7 @@ export default function App() {
     ),
 
     "War Room": <WarRoom theme={theme} />,
+    ExtensionGuard: <ExtensionGuardPanel theme={theme} />,
   };
 
   return (

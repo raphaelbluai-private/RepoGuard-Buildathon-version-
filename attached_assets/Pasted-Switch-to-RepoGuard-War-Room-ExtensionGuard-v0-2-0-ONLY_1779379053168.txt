@@ -1,0 +1,108 @@
+Switch to RepoGuard War Room + ExtensionGuard v0.2.0 ONLY.
+
+Repo:
+raphaelbluai-private/RepoGuard-Buildathon-version-
+Branch:
+buildathon-war-room
+
+Current build is green. Preserve the public War Room live repo scanner. Do not alter /api/scan, handleRealScan, public repo input behavior, GitHub token support, branding, old bug fixes, or unrelated modules.
+
+Objective:
+Finish ExtensionGuard v0.2.0 integration additively.
+
+Implement exactly:
+
+1. In artifacts/repoguard/src/components/ExtensionGuardPanel.tsx
+- Export:
+  export const EXTENSION_GUARD_STORAGE_KEY = "repoguard.extensionGuard.v0.2.result";
+  export const SAMPLE_EXTENSION_INVENTORY = `...current sample inventory...`;
+- When runScan() produces an ExtensionGuardResult, persist only sanitized data to localStorage under EXTENSION_GUARD_STORAGE_KEY.
+- When reset() runs, remove EXTENSION_GUARD_STORAGE_KEY.
+- Sanitized data must include:
+  version: "0.2.0"
+  scanMode
+  scanTime
+  extensionsScanned
+  highRiskCount
+  unknownPublisherCount
+  toolingRiskScore
+  status
+  findings mapped to:
+    id
+    extensionId
+    publisher
+    name
+    version
+    severity
+    ruleId
+    whatBroke
+    whyMatters
+    howToFix
+    confidence
+    evidence
+  recommendations
+- Do not persist raw textarea input beyond what the current panel already holds in React state.
+- Do not collect filesystem data.
+- Do not call external APIs.
+
+2. In artifacts/repoguard/src/App.tsx
+- Only if missing, add:
+  import ExtensionGuardPanel from "./components/ExtensionGuardPanel";
+- Add "ExtensionGuard" to authenticated shell pages only.
+- Do not add ExtensionGuard to the public unauthenticated War Room shell.
+- Add pageContent entry:
+  "ExtensionGuard": <ExtensionGuardPanel theme={theme} />
+- Do not change existing public War Room behavior.
+
+3. In artifacts/repoguard/src/components/WarRoom.tsx
+- Import EXTENSION_GUARD_STORAGE_KEY from "./ExtensionGuardPanel".
+- Add a small helper inside WarRoom.tsx:
+  loadSanitizedExtensionGuardResult()
+  It reads localStorage, validates object shape defensively, and returns null if missing/invalid.
+- Add derived const:
+  const extensionGuardResult = useMemo(() => loadSanitizedExtensionGuardResult(), [reportOpen, rawOpen]);
+- Do not modify handleRealScan or /api/scan behavior.
+
+4. Raw Scan Data
+- In the existing Raw Scan Data JSON, add:
+  extensionGuard: extensionGuardResult
+    ? { included: true, ...extensionGuardResult }
+    : { included: false, status: "NOT_RUN", note: "No ExtensionGuard evaluation has been run in this browser session." }
+- Keep this sanitized. Do not include textarea raw inventory.
+
+5. Safe-to-Ship Report
+- Pass extensionGuardResult into SafeToShipReport as a new optional prop.
+- Add a new section titled:
+  ExtensionGuard · Developer Tooling Supply Chain Risk
+- If null:
+  Show “Not run in this browser session.”
+- If present:
+  Show status, toolingRiskScore, extensionsScanned, highRiskCount, unknownPublisherCount.
+  List findings with severity, extensionId, ruleId, evidence, and fix plan text.
+  List recommendations.
+- Include the same ExtensionGuard summary in:
+  buildSummary()
+  handleDownloadJSON()
+  buildMarkdown()
+
+6. Validation
+Run:
+pnpm run typecheck
+pnpm run build
+
+7. Manual behavior checks
+- Public War Room unauthenticated repo scan still loads.
+- Public repo input still scans.
+- Sample Scan still works.
+- Authenticated ExtensionGuard tab appears.
+- Load Sample + Evaluate produces ExtensionGuard findings.
+- Open Safe-to-Ship Report includes ExtensionGuard section.
+- Raw Scan Data includes sanitized extensionGuard object.
+- Reset ExtensionGuard clears extensionGuard from localStorage.
+- No external APIs, no filesystem access, no secret collection.
+
+Commit message:
+Finish ExtensionGuard v0.2.0 report integration
+
+Push to:
+buildathon-war-room
