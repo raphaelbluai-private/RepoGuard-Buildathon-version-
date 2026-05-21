@@ -37,7 +37,7 @@ const WAR_ROOM_STORAGE_KEY = "repoguard.warRoom.v2";
 
 type PersistedWarRoomState = {
   scanMode: ScanMode;
-  fixesApplied: boolean;
+  appliedFixes: Record<string, boolean>;
   selectedRiskId: string | null;
   statusOverrides: Record<string, RiskStatus>;
   repoInput: string;
@@ -65,7 +65,10 @@ function loadPersistedState(): PersistedWarRoomState | null {
 
     return {
       scanMode,
-      fixesApplied: Boolean(parsed.fixesApplied),
+      appliedFixes:
+        parsed.appliedFixes && typeof parsed.appliedFixes === "object"
+          ? parsed.appliedFixes as Record<string, boolean>
+          : {},
       selectedRiskId:
         typeof parsed.selectedRiskId === "string" ? parsed.selectedRiskId : null,
       statusOverrides:
@@ -160,8 +163,8 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const [scanMode, setScanMode] = useState<ScanMode>(
     () => loadPersistedState()?.scanMode ?? { kind: "idle" },
   );
-  const [fixesApplied, setFixesApplied] = useState<boolean>(
-    () => loadPersistedState()?.fixesApplied ?? false,
+  const [appliedFixes, setAppliedFixes] = useState<Record<string, boolean>>(
+    () => loadPersistedState()?.appliedFixes ?? {},
   );
   const [selectedRiskId, setSelectedRiskId] = useState<string | null>(
     () => loadPersistedState()?.selectedRiskId ?? null,
@@ -199,7 +202,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
           WAR_ROOM_STORAGE_KEY,
           JSON.stringify({
             scanMode,
-            fixesApplied,
+            appliedFixes,
             selectedRiskId,
             statusOverrides,
             repoInput,
@@ -210,7 +213,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
       }
     }, 300);
     return () => window.clearTimeout(id);
-  }, [scanMode, fixesApplied, selectedRiskId, statusOverrides, repoInput]);
+  }, [scanMode, appliedFixes, selectedRiskId, statusOverrides, repoInput]);
 
   function setRiskStatus(id: string, s: RiskStatus) {
     setStatusOverrides(prev => ({ ...prev, [id]: s }));
@@ -231,6 +234,25 @@ export default function WarRoom({ theme }: WarRoomProps) {
     isSample           ? SEEDED_RISKS :
                          [];
 
+  function isRiskFixApplied(id: string): boolean {
+    return Boolean(appliedFixes[id]);
+  }
+  function applyRiskFix(id: string): void {
+    setAppliedFixes(prev => ({ ...prev, [id]: true }));
+  }
+  function clearRiskFix(id: string): void {
+    setAppliedFixes(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+  function allRiskFixesApplied(): boolean {
+    return hasScan && risks.length > 0 && risks.every(r => Boolean(appliedFixes[r.id]));
+  }
+  const fixedRiskCount = risks.filter(r => isRiskFixApplied(r.id)).length;
+  const allFixesApplied = allRiskFixesApplied();
+
   const baseGates: SafetyGate[] =
     isReal && realScan ? realScan.gates :
     isSample           ? GATES_BEFORE :
@@ -238,10 +260,10 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   // After fixes: real scans flip every gate to pass; sample uses GATES_AFTER.
   const gates: SafetyGate[] =
-    !hasScan       ? [] :
-    !fixesApplied  ? baseGates :
-    isReal         ? baseGates.map(g => ({ ...g, state: "pass" as const, detail: "Resolved post-fix" })) :
-                     GATES_AFTER;
+    !hasScan          ? [] :
+    !allFixesApplied  ? baseGates :
+    isReal            ? baseGates.map(g => ({ ...g, state: "pass" as const, detail: "Resolved post-fix" })) :
+                        GATES_AFTER;
 
   const scoreBefore =
     isReal && realScan ? realScan.score :
@@ -253,7 +275,13 @@ export default function WarRoom({ theme }: WarRoomProps) {
     isSample           ? SCORE_AFTER :
                          0;
 
-  const scoreCurrent = !hasScan ? 100 : (fixesApplied ? scoreAfter : scoreBefore);
+  const scoreCurrent = !hasScan
+    ? 100
+    : risks.length === 0
+      ? scoreAfter
+      : allFixesApplied
+        ? scoreAfter
+        : scoreBefore + Math.round((scoreAfter - scoreBefore) * (fixedRiskCount / risks.length));
   const scoreDelta = Math.max(0, scoreAfter - scoreBefore);
 
   const projectName =
@@ -266,28 +294,28 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   const realStatus =
     isReal && realScan ? realScan.status :
-    isSample           ? (fixesApplied ? "SAFE_TO_SHIP" : "SHIP_BLOCKED") :
+    isSample           ? (allFixesApplied ? "SAFE_TO_SHIP" : "SHIP_BLOCKED") :
                          "SAFE_TO_SHIP";
 
   const statusLabel =
     !hasScan                                  ? "—" :
-    fixesApplied                              ? "READY TO SHIP" :
+    allFixesApplied                           ? "READY TO SHIP" :
     realStatus === "SAFE_TO_SHIP"             ? "SAFE TO SHIP" :
     realStatus === "NEEDS_REVIEW"             ? "NEEDS REVIEW" :
                                                 "SHIP BLOCKED";
 
   const statusColor =
-    !hasScan                                  ? "#FCA5A5" :
-    fixesApplied || realStatus === "SAFE_TO_SHIP" ? "#6EE7B7" :
-    realStatus === "NEEDS_REVIEW"             ? "#FCD34D" :
-                                                "#FCA5A5";
+    !hasScan                                         ? "#FCA5A5" :
+    allFixesApplied || realStatus === "SAFE_TO_SHIP" ? "#6EE7B7" :
+    realStatus === "NEEDS_REVIEW"                    ? "#FCD34D" :
+                                                       "#FCA5A5";
 
   const criticalCount = risks.filter(r => r.severity === "critical").length;
   const highCount     = risks.filter(r => r.severity === "high").length;
   const mediumCount   = risks.filter(r => r.severity === "medium").length;
   const lowCount      = risks.filter(r => r.severity === "low").length;
 
-  const safeToShip = hasScan && (fixesApplied || realStatus === "SAFE_TO_SHIP");
+  const safeToShip = hasScan && (allFixesApplied || realStatus === "SAFE_TO_SHIP");
   const topBlocker = risks.find(r => r.severity === "critical")
                   ?? risks.find(r => r.severity === "high")
                   ?? risks[0];
@@ -297,7 +325,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
     const trimmed = input.trim();
     if (!trimmed) return;
     setScanMode({ kind: "scanning", repo: trimmed });
-    setFixesApplied(false);
+    setAppliedFixes({});
     setSelectedRiskId(null);
 
     // Defensive watchdog: if the fetch never resolves (proxy hang, sleep,
@@ -388,13 +416,13 @@ export default function WarRoom({ theme }: WarRoomProps) {
 
   function handleSampleScan() {
     setScanMode({ kind: "sample" });
-    setFixesApplied(false);
+    setAppliedFixes({});
     setSelectedRiskId(null);
   }
 
   function handleResetAll() {
     setScanMode({ kind: "idle" });
-    setFixesApplied(false);
+    setAppliedFixes({});
     setSelectedRiskId(null);
     setRepoInput("");
     setStatusOverrides({});
@@ -439,6 +467,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
   const lastScan = hasScan ? "Just now" : "—";
 
   const selectedRisk = selectedRiskId ? risks.find(r => r.id === selectedRiskId) : null;
+  const selectedRiskFixApplied = selectedRisk ? isRiskFixApplied(selectedRisk.id) : false;
 
   const extensionGuardResult = useMemo(() => loadSanitizedExtensionGuardResult(), [reportOpen, rawOpen]);
 
@@ -710,6 +739,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
                     evidenceLine: f.evidenceLine, confidence: f.confidence, source: f.source,
                   })),
                   gates: realScan.gates,
+                  appliedFixes,
                   extensionGuard: extensionGuardResult
                     ? { included: true, ...extensionGuardResult }
                     : { included: false, status: "NOT_RUN", note: "No ExtensionGuard evaluation has been run in this browser session." },
@@ -734,14 +764,14 @@ export default function WarRoom({ theme }: WarRoomProps) {
               One view of every risk an AI-built app must clear before it ships.
             </div>
           </div>
-          {fixesApplied && (
+          {fixedRiskCount > 0 && (
             <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
               <button
                 className="wr-ghost-btn"
-                onClick={() => { setFixesApplied(false); setSelectedRiskId(null); }}
-                title="Revert fixes to show the unsafe state again"
+                onClick={() => { setAppliedFixes({}); setSelectedRiskId(null); }}
+                title="Revert all applied fixes to show the unsafe state again"
               >
-                ↻ Reset Fixes
+                ↻ Reset All Fixes
               </button>
             </div>
           )}
@@ -818,7 +848,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
               <RiskCardView
                 key={r.id}
                 risk={r}
-                fixed={fixesApplied}
+                fixed={isRiskFixApplied(r.id)}
                 selected={selectedRiskId === r.id}
                 onClick={() => setSelectedRiskId(id => id === r.id ? null : r.id)}
                 statusOverride={statusOverrides[r.id]}
@@ -901,9 +931,9 @@ export default function WarRoom({ theme }: WarRoomProps) {
             </div>
 
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${divider}` }}>
-              {!fixesApplied ? (
+              {!selectedRiskFixApplied ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
-                  <button className="wr-cta" onClick={() => setFixesApplied(true)}>
+                  <button className="wr-cta" onClick={() => applyRiskFix(selectedRisk.id)}>
                     ✦ Generate Fix Plan
                   </button>
                   <div style={{ fontSize: 12, color: subText, lineHeight: 1.5 }}>
@@ -916,7 +946,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
                   <div style={{
                     display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
                     fontSize: 11, color: "#C49A47", fontWeight: 800, letterSpacing: "0.10em",
-                    textTransform: "uppercase",
+                    textTransform: "uppercase", flexWrap: "wrap",
                   }}>
                     <span style={{
                       display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -925,6 +955,10 @@ export default function WarRoom({ theme }: WarRoomProps) {
                       color: "#6EE7B7", fontSize: 11, fontWeight: 800,
                     }}>✓</span>
                     Deterministic Fix Plan · Applied
+                    <button className="wr-ghost-btn" onClick={() => clearRiskFix(selectedRisk.id)}
+                      style={{ padding: "5px 10px", fontSize: 12 }}>
+                      Reset This Fix
+                    </button>
                   </div>
                   <ol style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7 }}>
                     {selectedRisk.fixPlan.map((step, i) => (
@@ -960,7 +994,7 @@ export default function WarRoom({ theme }: WarRoomProps) {
             // Pre-fix: agent has scanned + classified + planned + validated checklist (steps 1-5).
             // Post-fix: agent has also generated the final report (step 6).
             // Pre-scan: nothing reached.
-            const milestoneIndex = !hasScan ? -1 : (fixesApplied ? 5 : 4);
+            const milestoneIndex = !hasScan ? -1 : (allFixesApplied ? 5 : 4);
             const reached = i <= milestoneIndex;
             return (
               <TraceStepRow key={i} step={step} reached={reached} isLast={i === AGENT_BUILD_TRACE.length - 1}
@@ -1000,8 +1034,9 @@ export default function WarRoom({ theme }: WarRoomProps) {
           risks={risks}
           gates={gates}
           scoreBefore={scoreBefore}
-          scoreAfter={fixesApplied ? scoreAfter : scoreCurrent}
-          fixesApplied={fixesApplied}
+          scoreAfter={allFixesApplied ? scoreAfter : scoreCurrent}
+          appliedFixes={appliedFixes}
+          allFixesApplied={allFixesApplied}
           statusLabel={statusLabel}
           statusColor={statusColor}
           isSample={isSample}
@@ -1257,7 +1292,7 @@ function EmptyState({ title, body, theme }: { title: string; body: string; theme
 
 function SafeToShipReport({
   onClose, theme, projectName, repoUrl, scanTimeISO, filesScanned,
-  risks, gates, scoreBefore, scoreAfter, fixesApplied,
+  risks, gates, scoreBefore, scoreAfter, appliedFixes, allFixesApplied,
   statusLabel, statusColor, isSample, rulesExecuted, extensionGuardResult,
 }: {
   onClose: () => void;
@@ -1270,7 +1305,8 @@ function SafeToShipReport({
   gates: SafetyGate[];
   scoreBefore: number;
   scoreAfter: number;
-  fixesApplied: boolean;
+  appliedFixes: Record<string, boolean>;
+  allFixesApplied: boolean;
   statusLabel: string;
   statusColor: string;
   isSample: boolean;
@@ -1284,7 +1320,10 @@ function SafeToShipReport({
   const border = dark ? "1px solid rgba(196,154,71,0.25)" : "1px solid rgba(28,44,69,0.12)";
   const divider = dark ? "rgba(255,255,255,0.07)" : "rgba(28,44,69,0.08)";
 
-  const criticalBlockers = risks.filter(r => r.severity === "critical");
+  function isReportRiskFixed(id: string): boolean {
+    return Boolean(appliedFixes[id]);
+  }
+  const criticalBlockers = risks.filter(r => r.severity === "critical" && !isReportRiskFixed(r.id));
   const scanTime = new Date(scanTimeISO).toLocaleString();
   const slug = projectName.replace(/[^A-Za-z0-9._-]+/g, "_") || "scan";
 
@@ -1298,7 +1337,7 @@ function SafeToShipReport({
       `Scan mode:     ${scanMode}`,
       `Scan time:     ${scanTime}`,
       `Status:        ${statusLabel}`,
-      `Integrity:     ${scoreBefore}% → ${scoreAfter}%${fixesApplied ? "  [post-fix]" : ""}`,
+      `Integrity:     ${scoreBefore}% → ${scoreAfter}%${allFixesApplied ? "  [post-fix]" : ""}`,
       `Files scanned: ${filesScanned.length || "—"}`,
       rulesExecuted != null ? `Rules executed: ${rulesExecuted}` : "",
       ``,
@@ -1366,7 +1405,8 @@ function SafeToShipReport({
       scanMode: isSample ? "sample" : "live",
       sample: isSample,
       rulesExecuted: rulesExecuted ?? null,
-      score: { before: scoreBefore, after: scoreAfter, postFix: fixesApplied },
+      score: { before: scoreBefore, after: scoreAfter, postFix: allFixesApplied },
+      appliedFixes,
       status: statusLabel,
       filesScanned,
       findings: risks,
@@ -1402,12 +1442,12 @@ function SafeToShipReport({
     if (repoUrl) lines.push(`**Repository:** <${repoUrl}>`);
     lines.push(`**Scan time:** ${scanTime}`);
     lines.push(`**Status:** ${statusLabel}`);
-    lines.push(`**Integrity score:** ${scoreBefore}% → ${scoreAfter}%${fixesApplied ? "  _(post-fix)_" : ""}`);
+    lines.push(`**Integrity score:** ${scoreBefore}% → ${scoreAfter}%${allFixesApplied ? "  _(post-fix)_" : ""}`);
     if (filesScanned.length > 0) lines.push(`**Files scanned:** ${filesScanned.length}`);
     lines.push("");
 
     lines.push(`## Critical Blockers`);
-    if (criticalBlockers.length === 0 || fixesApplied) {
+    if (criticalBlockers.length === 0) {
       lines.push("_None — no critical risks remaining._");
     } else {
       criticalBlockers.forEach(r => {
@@ -1424,7 +1464,7 @@ function SafeToShipReport({
       lines.push("| Severity | Category | File | Finding |");
       lines.push("| --- | --- | --- | --- |");
       risks.forEach(r => {
-        const sev = fixesApplied ? "RESOLVED" : r.severity.toUpperCase();
+        const sev = isReportRiskFixed(r.id) ? "RESOLVED" : r.severity.toUpperCase();
         const file = r.file.replace(/\|/g, "\\|");
         const finding = r.shortExplanation.replace(/\|/g, "\\|");
         lines.push(`| ${sev} | ${r.category} | \`${file}\` | ${finding} |`);
@@ -1664,7 +1704,7 @@ function SafeToShipReport({
 
         {/* Critical blockers */}
         <SectionTitle>Critical Blockers</SectionTitle>
-        {criticalBlockers.length === 0 || fixesApplied ? (
+        {criticalBlockers.length === 0 ? (
           <div style={{ fontSize: 13.5, color: sub }}>None — no critical risks remaining.</div>
         ) : (
           <ul style={{ margin: 0, paddingLeft: 20, color: text, fontSize: 13.5, lineHeight: 1.7,
@@ -1683,7 +1723,7 @@ function SafeToShipReport({
         <div style={{ display: "grid", gap: 6 }}>
           {risks.map(r => {
             const sev = SEVERITY_COLOR[r.severity];
-            const resolved = fixesApplied;
+            const resolved = isReportRiskFixed(r.id);
             return (
               <div key={r.id} className="wr-modal-row" style={{
                 padding: "8px 12px", borderRadius: 10,

@@ -1,0 +1,207 @@
+RepoGuard War Room + ExtensionGuard v0.2.0 ONLY.
+
+Patch artifacts/repoguard/src/components/WarRoom.tsx only.
+
+Current GitHub/Replit state:
+- ExtensionGuard report integration is already present.
+- EXTENSION_GUARD_STORAGE_KEY import is present.
+- extensionGuardResult is present.
+- SafeToShipReport already receives extensionGuardResult.
+- Raw Scan Data already includes extensionGuard.
+- Do not remove or alter ExtensionGuard reporting.
+
+Bug:
+War Room still uses global fixesApplied boolean. This causes one generated fix plan to mark every finding resolved. Fix application and triage must be finding-scoped.
+
+Implement:
+
+1. Update PersistedWarRoomState:
+Replace:
+  fixesApplied: boolean;
+With:
+  appliedFixes: Record<string, boolean>;
+
+For backward compatibility, load old parsed.fixesApplied as {}. Do not preserve old global behavior.
+
+2. In loadPersistedState():
+Return:
+  appliedFixes:
+    parsed.appliedFixes && typeof parsed.appliedFixes === "object"
+      ? parsed.appliedFixes as Record<string, boolean>
+      : {}
+
+Remove fixesApplied from returned state.
+
+3. Replace state:
+Remove:
+  const [fixesApplied, setFixesApplied] = useState<boolean>(...)
+
+Add:
+  const [appliedFixes, setAppliedFixes] = useState<Record<string, boolean>>(
+    () => loadPersistedState()?.appliedFixes ?? {},
+  );
+
+4. Update localStorage persistence:
+Replace fixesApplied with appliedFixes in the JSON payload.
+Update dependency array from fixesApplied to appliedFixes.
+
+5. Add helper functions inside WarRoom after risks are computed:
+  function isRiskFixApplied(id: string): boolean {
+    return Boolean(appliedFixes[id]);
+  }
+
+  function applyRiskFix(id: string): void {
+    setAppliedFixes(prev => ({ ...prev, [id]: true }));
+  }
+
+  function clearRiskFix(id: string): void {
+    setAppliedFixes(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function allRiskFixesApplied(): boolean {
+    return hasScan && risks.length > 0 && risks.every(r => Boolean(appliedFixes[r.id]));
+  }
+
+  const fixedRiskCount = risks.filter(r => isRiskFixApplied(r.id)).length;
+  const allFixesApplied = allRiskFixesApplied();
+
+6. Reset applied fixes on:
+- handleRealScan()
+- handleSampleScan()
+- handleResetAll()
+
+Add:
+  setAppliedFixes({});
+
+7. Replace global score/checklist/status behavior:
+- gates should use allFixesApplied, not fixesApplied.
+- scoreCurrent:
+  const scoreCurrent = !hasScan
+    ? 100
+    : risks.length === 0
+      ? scoreAfter
+      : allFixesApplied
+        ? scoreAfter
+        : scoreBefore + Math.round((scoreAfter - scoreBefore) * (fixedRiskCount / risks.length));
+
+- realStatus sample branch should use allFixesApplied.
+- statusLabel should become READY TO SHIP only when allFixesApplied is true, or realStatus is SAFE_TO_SHIP.
+- statusColor should use allFixesApplied instead of fixesApplied.
+- safeToShip should use allFixesApplied instead of fixesApplied.
+
+8. Reset button:
+Replace the global fixes button condition:
+  {fixesApplied && (...)}
+With:
+  {fixedRiskCount > 0 && (...)}
+
+Button label:
+  ↻ Reset All Fixes
+
+onClick:
+  setAppliedFixes({});
+  setSelectedRiskId(null);
+
+Do not clear statusOverrides.
+
+9. Risk cards:
+Replace:
+  fixed={fixesApplied}
+With:
+  fixed={isRiskFixApplied(r.id)}
+
+10. Selected risk detail:
+Before render logic, use:
+  const selectedRiskFixApplied = selectedRisk ? isRiskFixApplied(selectedRisk.id) : false;
+
+Replace:
+  {!fixesApplied ? (...)
+With:
+  {!selectedRiskFixApplied ? (...)
+
+Generate Fix Plan button:
+  onClick={() => applyRiskFix(selectedRisk.id)}
+
+When applied, show only that selected risk’s fix plan.
+Add Reset This Fix button near the applied heading:
+  <button className="wr-ghost-btn" onClick={() => clearRiskFix(selectedRisk.id)} style={{ padding: "5px 10px", fontSize: 12 }}>
+    Reset This Fix
+  </button>
+
+Do not mutate statusOverrides when applying or clearing a fix.
+
+11. Agent Build Trace:
+Use allFixesApplied instead of fixesApplied for milestoneIndex.
+
+12. Raw Scan Data:
+Add appliedFixes to the JSON payload:
+  appliedFixes,
+
+Keep existing extensionGuard object unchanged.
+
+13. SafeToShipReport call:
+Replace:
+  scoreAfter={fixesApplied ? scoreAfter : scoreCurrent}
+  fixesApplied={fixesApplied}
+With:
+  scoreAfter={allFixesApplied ? scoreAfter : scoreCurrent}
+  appliedFixes={appliedFixes}
+  allFixesApplied={allFixesApplied}
+
+Keep extensionGuardResult prop.
+
+14. SafeToShipReport signature:
+Replace fixesApplied boolean prop with:
+  appliedFixes: Record<string, boolean>;
+  allFixesApplied: boolean;
+
+15. Inside SafeToShipReport:
+Add helper:
+  function isReportRiskFixed(id: string): boolean {
+    return Boolean(appliedFixes[id]);
+  }
+
+Replace all global fixesApplied report logic:
+- Integrity post-fix text uses allFixesApplied.
+- JSON score.postFix uses allFixesApplied.
+- JSON includes appliedFixes.
+- Critical blockers filter:
+    const criticalBlockers = risks.filter(r => r.severity === "critical" && !isReportRiskFixed(r.id));
+- Risk summary resolved state:
+    const resolved = isReportRiskFixed(r.id);
+- Markdown Risk Summary severity:
+    const sev = isReportRiskFixed(r.id) ? "RESOLVED" : r.severity.toUpperCase();
+- Critical Blockers “None” condition should depend on criticalBlockers.length === 0.
+- Any remaining fixesApplied references must be replaced with allFixesApplied or isReportRiskFixed(r.id), depending on context.
+
+16. Confirm no remaining WarRoom global fixesApplied references except comments if unavoidable:
+Search:
+  fixesApplied
+There should be none, unless intentionally left in a migration comment.
+
+17. Validation:
+Run:
+  pnpm run typecheck
+  pnpm run build
+
+18. Manual checks:
+- Public sample scan.
+- Generate fix plan for one finding.
+- Only that card becomes resolved.
+- Other cards retain independent status.
+- Mark a different finding Accepted Risk.
+- Only that finding changes.
+- Checklist does not globally pass until all findings have fixes applied.
+- Safe-to-Ship report shows independent fixed states.
+- Raw Scan Data includes appliedFixes and extensionGuard.
+- ExtensionGuard report section still appears.
+- Public repo scan still works.
+
+Commit:
+  git add artifacts/repoguard/src/components/WarRoom.tsx
+  git commit -m "Fix independent War Room risk triage and fix state"
+  git push origin buildathon-war-room
