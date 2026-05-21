@@ -39,6 +39,35 @@ export default function ExtensionGuardPanel({ theme, onResultChange }: Props) {
   const cardBg = dark ? "rgba(17,17,17,0.74)" : "rgba(255,255,255,0.92)";
   const border = dark ? "1px solid rgba(196,154,71,0.18)" : "1px solid rgba(28,44,69,0.10)";
 
+  const primaryButton: React.CSSProperties = {
+    background: "#C49A47",
+    color: "#111",
+    border: "1px solid #C49A47",
+    borderRadius: 12,
+    padding: "13px 18px",
+    minHeight: 48,
+    minWidth: 210,
+    fontFamily: "inherit",
+    fontSize: 14,
+    fontWeight: 900,
+    cursor: input.trim() ? "pointer" : "not-allowed",
+    opacity: input.trim() ? 1 : 0.52,
+    boxShadow: input.trim() ? "0 6px 22px rgba(196,154,71,0.30)" : "none",
+  };
+
+  const secondaryButton: React.CSSProperties = {
+    background: dark ? "rgba(255,255,255,0.06)" : "rgba(28,44,69,0.06)",
+    color: text,
+    border: dark ? "1px solid rgba(255,255,255,0.14)" : "1px solid rgba(28,44,69,0.14)",
+    borderRadius: 12,
+    padding: "13px 16px",
+    minHeight: 48,
+    fontFamily: "inherit",
+    fontSize: 14,
+    fontWeight: 800,
+    cursor: "pointer",
+  };
+
   const selected = useMemo(
     () => result?.findings.find((finding) => finding.id === selectedId) ?? result?.findings[0] ?? null,
     [result, selectedId],
@@ -80,6 +109,9 @@ export default function ExtensionGuardPanel({ theme, onResultChange }: Props) {
       </section>
 
       <section style={{ background: cardBg, border, borderRadius: 16, padding: 18, marginBottom: 14 }}>
+        <div style={{ color: "#C49A47", fontSize: 12, fontWeight: 900, letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 8 }}>
+          Extension Inventory Input
+        </div>
         <textarea
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -101,10 +133,15 @@ export default function ExtensionGuardPanel({ theme, onResultChange }: Props) {
             boxSizing: "border-box",
           }}
         />
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-          <button className="wr-cta" onClick={() => runScan()} disabled={!input.trim()}>Scan Tooling Risk</button>
-          <button className="wr-ghost-btn" onClick={loadSample}>Load Sample Inventory</button>
-          <button className="wr-ghost-btn" onClick={reset}>Reset ExtensionGuard</button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
+          <button style={primaryButton} onClick={() => runScan()} disabled={!input.trim()}>
+            Run ExtensionGuard Evaluation
+          </button>
+          <button style={secondaryButton} onClick={loadSample}>Load Sample + Evaluate</button>
+          <button style={secondaryButton} onClick={reset}>Reset ExtensionGuard</button>
+        </div>
+        <div style={{ color: muted, fontSize: 12, lineHeight: 1.45, marginTop: 10 }}>
+          The gold button runs the deterministic evaluation on whatever inventory is currently pasted above. The sample button loads test data and evaluates it immediately.
         </div>
       </section>
 
