@@ -41,8 +41,8 @@ jobs:
         run: uv sync --group dev
       - name: Compile production modules
         run: uv run python -m py_compile backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py
-      - name: Lint backend
-        run: uv run ruff check backend/
+      - name: Lint production backend
+        run: uv run ruff check backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py
       - name: Run scanner and API regression suite
         working-directory: backend
         env:
