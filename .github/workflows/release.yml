@@ -35,7 +35,7 @@ jobs:
           retention-days: 1
 
   backend-ci:
-    name: Backend — Production Regression & x402 Gate
+    name: Backend — Production Regression, x402 & Discovery Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,15 +45,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
       - name: Compile production modules
-        run: uv run python -m py_compile backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py backend/x402_payments.py
+        run: uv run python -m py_compile backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py backend/x402_payments.py backend/commerce_telemetry.py
       - name: Lint correctness-critical rules
-        run: uv run ruff check --select E4,E7,E9,F backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py backend/x402_payments.py
-      - name: Run regression, API contract and x402 tests
+        run: uv run ruff check --select E4,E7,E9,F backend/app.py backend/run.py backend/scanner.py backend/commercial.py backend/commercial_app.py backend/x402_payments.py backend/commerce_telemetry.py
+      - name: Run regression, API, x402, discovery and telemetry tests
         working-directory: backend
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
           REPOGUARD_INTERNAL: "1"
           REPOGUARD_CACHE_DB: /tmp/repoguard-release-cache.sqlite3
+          REPOGUARD_TELEMETRY_DB: /tmp/repoguard-release-commerce.sqlite3
         run: uv run pytest -q tests
 
   release:
@@ -87,7 +88,9 @@ jobs:
             backend/ pyproject.toml uv.lock \
             --exclude "backend/__pycache__/*" \
             --exclude "backend/*.pyc" \
-            --exclude "backend/repoguard-cache.sqlite3"
+            --exclude "backend/*.sqlite3" \
+            --exclude "backend/*.sqlite3-wal" \
+            --exclude "backend/*.sqlite3-shm"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
