@@ -2,4 +2,4 @@ fastapi
 uvicorn
 pydantic
 requests
-x402[evm,fastapi]>=2.20.0,<3
+x402[evm,extensions,fastapi]>=2.20.0,<3
