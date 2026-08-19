@@ -46,6 +46,7 @@ jobs:
       - name: Run scanner and API regression suite
         working-directory: backend
         env:
+          PYTHONPATH: ${{ github.workspace }}/backend
           REPOGUARD_INTERNAL: "1"
           REPOGUARD_CACHE_DB: /tmp/repoguard-ci-cache.sqlite3
         run: uv run pytest -q tests
