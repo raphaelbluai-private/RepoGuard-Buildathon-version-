@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+**/*.sqlite3
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+node_modules
+frontend/node_modules
+artifacts
