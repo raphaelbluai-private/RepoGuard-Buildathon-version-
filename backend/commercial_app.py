@@ -9,10 +9,35 @@ from fastapi.responses import JSONResponse
 
 from app import ScanBody, _client_ip, _enforce, app
 from commercial import commercial_scan, github_auth_configured
-from x402_payments import configure_x402
+from x402_payments import configure_x402, x402_enabled
 
 
 _X402_STATE = None
+
+
+@app.middleware("http")
+async def block_legacy_free_scan_when_paid(request: Request, call_next):
+    """Prevent the legacy scanner from bypassing the paid machine route.
+
+    `/api/scan` remains available while x402 is disabled for demo/development
+    compatibility. Once commerce is enabled, equivalent scanner capability must
+    go through `/v1/scan`, where the x402 middleware issues the payment challenge.
+    """
+    if (
+        x402_enabled()
+        and request.method.upper() == "POST"
+        and request.url.path == "/api/scan"
+    ):
+        return JSONResponse(
+            status_code=410,
+            content={
+                "ok": False,
+                "error": "COMMERCIAL_ROUTE_REQUIRED",
+                "message": "RepoGuard scans are available through the paid /v1/scan route.",
+                "route": "/v1/scan",
+            },
+        )
+    return await call_next(request)
 
 
 @app.get("/v1/health")
@@ -41,6 +66,6 @@ def v1_scan(body: ScanBody, request: Request):
     return JSONResponse(status_code=status_code, content=payload)
 
 
-# Install payment middleware only after all routes have been registered.  The
+# Install payment middleware only after all routes have been registered. The
 # configuration is fail-closed when REPOGUARD_X402_ENABLED=1.
 _X402_STATE = configure_x402(app)
