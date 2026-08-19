@@ -42,7 +42,7 @@ def test_testnet_configuration_is_base_sepolia(monkeypatch):
     assert cfg["facilitator_url"] == "https://x402.org/facilitator"
 
 
-def _run_enabled_probe(extra_headers=None):
+def _run_enabled_probe(path="/v1/scan", extra_headers=None):
     headers = extra_headers or {}
     script = f'''
 import json
@@ -56,11 +56,12 @@ os.environ["REPOGUARD_INTERNAL"] = "1"
 from fastapi.testclient import TestClient
 import commercial_app
 client = TestClient(commercial_app.app)
-response = client.post("/v1/scan", json={{"repo": "acme/service"}}, headers={headers!r})
+response = client.post("{path}", json={{"repo": "acme/service"}}, headers={headers!r})
 print(json.dumps({{
     "status": response.status_code,
     "payment_required": "payment-required" in {{k.lower() for k in response.headers.keys()}},
     "payment_response": response.headers.get("PAYMENT-RESPONSE"),
+    "body": response.json(),
 }}))
 '''
     env = os.environ.copy()
@@ -82,5 +83,12 @@ def test_no_payment_returns_402_with_payment_required_header():
 
 
 def test_invalid_payment_signature_is_denied():
-    result = _run_enabled_probe({"PAYMENT-SIGNATURE": "invalid-payment-payload"})
+    result = _run_enabled_probe(extra_headers={"PAYMENT-SIGNATURE": "invalid-payment-payload"})
     assert result["status"] != 200
+
+
+def test_legacy_scan_cannot_bypass_paid_route_when_x402_enabled():
+    result = _run_enabled_probe(path="/api/scan")
+    assert result["status"] == 410
+    assert result["body"]["error"] == "COMMERCIAL_ROUTE_REQUIRED"
+    assert result["body"]["route"] == "/v1/scan"
