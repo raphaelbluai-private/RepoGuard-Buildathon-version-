@@ -1,5 +1,4 @@
 import os
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,14 +8,15 @@ os.environ["REPOGUARD_CACHE_DB"] = "/tmp/repoguard-test-cache.sqlite3"
 
 import commercial
 import commercial_app
+from app import limiter
 
 
 @pytest.fixture(autouse=True)
 def isolate_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(commercial, "CACHE_DB_PATH", str(tmp_path / "cache.sqlite3"))
-    commercial_app.limiter._windows.clear()
-    commercial_app.limiter._lockouts.clear()
-    commercial_app.limiter._failed_auth.clear()
+    limiter._windows.clear()
+    limiter._lockouts.clear()
+    limiter._failed_auth.clear()
 
 
 @pytest.fixture
