@@ -17,6 +17,11 @@ import time
 from pathlib import Path
 from typing import Any
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.types import ASGIApp
+
 TELEMETRY_DB_PATH = os.environ.get(
     "REPOGUARD_TELEMETRY_DB",
     str(Path(__file__).resolve().parent / "repoguard-commerce.sqlite3"),
@@ -149,3 +154,16 @@ def summary() -> dict[str, int]:
         "scans_served": counts.get("scan_served", 0),
         "cache_hits": int(cache_hits),
     }
+
+
+class CommerceTelemetryMiddleware(BaseHTTPMiddleware):
+    """Observe final x402 responses without storing payment signatures."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        if request.method.upper() == "POST" and request.url.path == "/v1/scan":
+            record_x402_response(response.status_code, dict(response.headers))
+        return response
