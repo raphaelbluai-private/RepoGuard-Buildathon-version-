@@ -23,8 +23,15 @@ def _canonical_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _stable_result_material(result: dict[str, Any]) -> dict[str, Any]:
+    material = dict(result)
+    material.pop("scanTime", None)
+    material.pop("timestamp", None)
+    return material
+
+
 def canonical_result_hash(result: dict[str, Any]) -> str:
-    return "sha256:" + hashlib.sha256(_canonical_json(result)).hexdigest()
+    return "sha256:" + hashlib.sha256(_canonical_json(_stable_result_material(result))).hexdigest()
 
 
 def build_provenance(
