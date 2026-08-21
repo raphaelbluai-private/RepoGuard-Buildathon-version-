@@ -16,6 +16,18 @@ def test_product_catalog_launch_prices_and_roles():
     assert get_product("safe_to_ship").returns_full_findings is False
 
 
+def test_product_catalog_has_stable_machine_endpoints():
+    expected = {
+        "repo_preflight": "/v1/repoguard/preflight",
+        "verify_commit": "/v1/repoguard/verify",
+        "safe_to_ship": "/v1/repoguard/safe-to-ship",
+        "repo_scan": "/v1/repoguard/scan",
+        "explain_findings": "/v1/repoguard/explain",
+        "attest_scan": "/v1/repoguard/attest",
+    }
+    assert {k: v.endpoint for k, v in PRODUCTS.items()} == expected
+
+
 def test_result_hash_is_stable_for_equivalent_json_ordering():
     a = {"status": "SAFE_TO_SHIP", "score": 100, "findings": []}
     b = {"findings": [], "score": 100, "status": "SAFE_TO_SHIP"}
