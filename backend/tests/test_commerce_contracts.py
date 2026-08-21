@@ -22,6 +22,12 @@ def test_result_hash_is_stable_for_equivalent_json_ordering():
     assert canonical_result_hash(a) == canonical_result_hash(b)
 
 
+def test_result_hash_ignores_ephemeral_scan_time():
+    a = {"status": "SAFE_TO_SHIP", "score": 100, "findings": [], "scanTime": "2026-08-21T00:00:00Z"}
+    b = {"status": "SAFE_TO_SHIP", "score": 100, "findings": [], "scanTime": "2026-08-21T00:00:05Z"}
+    assert canonical_result_hash(a) == canonical_result_hash(b)
+
+
 def test_provenance_is_commit_and_version_bound():
     result = {"status": "SAFE_TO_SHIP", "score": 100, "findings": []}
     p = build_provenance(
