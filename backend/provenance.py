@@ -64,3 +64,24 @@ def build_provenance(
         "timestamp": ts,
         "safe_to_ship": status == "SAFE_TO_SHIP",
     }
+
+
+def build_attestation(provenance: dict[str, Any]) -> dict[str, Any]:
+    material = {
+        "scan_id": provenance.get("scan_id"),
+        "source_provider": provenance.get("source_provider"),
+        "repository": provenance.get("repository"),
+        "commit_sha": provenance.get("commit_sha"),
+        "scanner_version": provenance.get("scanner_version"),
+        "ruleset_version": provenance.get("ruleset_version"),
+        "adapter_version": provenance.get("adapter_version"),
+        "result_hash": provenance.get("result_hash"),
+        "safe_to_ship": provenance.get("safe_to_ship"),
+    }
+    digest = hashlib.sha256(_canonical_json(material)).hexdigest()
+    return {
+        "attestation_id": "rga_" + digest[:24],
+        **material,
+        "timestamp": provenance.get("timestamp"),
+        "attestation_hash": "sha256:" + digest,
+    }
