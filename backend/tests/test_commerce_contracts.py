@@ -1,5 +1,5 @@
 from product_catalog import PRODUCTS, get_product
-from provenance import build_provenance, canonical_result_hash
+from provenance import build_attestation, build_provenance, canonical_result_hash
 
 
 def test_product_catalog_launch_prices_and_roles():
@@ -47,3 +47,23 @@ def test_provenance_is_commit_and_version_bound():
     assert p["safe_to_ship"] is True
     assert p["result_hash"].startswith("sha256:")
     assert p["scan_id"].startswith("rg_")
+
+
+def test_attestation_hash_is_stable_and_scan_bound():
+    provenance = {
+        "scan_id": "rg_abc",
+        "source_provider": "github",
+        "repository": "owner/repo",
+        "commit_sha": "abc123",
+        "scanner_version": "1.0.0",
+        "ruleset_version": "1.0.0",
+        "adapter_version": "github-1.0.0",
+        "result_hash": "sha256:deadbeef",
+        "safe_to_ship": True,
+        "timestamp": "2026-08-21T00:00:00Z",
+    }
+    a = build_attestation(provenance)
+    b = build_attestation(dict(provenance))
+    assert a["attestation_id"] == b["attestation_id"]
+    assert a["attestation_hash"] == b["attestation_hash"]
+    assert a["attestation_hash"].startswith("sha256:")
