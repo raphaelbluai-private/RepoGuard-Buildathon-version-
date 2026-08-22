@@ -28,6 +28,16 @@ X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
 
 
+@app.get("/v1/health", include_in_schema=False)
+def v1_health():
+    """Railway compatibility healthcheck for legacy deployment metadata."""
+    return {
+        "status": "ok",
+        "service": "RepoGuard",
+        "api_version": "2.0.0",
+    }
+
+
 class RepoRequest(BaseModel):
     repo: str
     provider: str = "github"
