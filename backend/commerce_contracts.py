@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from source_adapters import provider_capabilities as _provider_capabilities
+
+
+def provider_capabilities() -> dict[str, dict[str, Any]]:
+    return _provider_capabilities()
+
 
 def safe_to_ship_view(result: dict[str, Any], provenance: dict[str, Any]) -> dict[str, Any]:
     findings = result.get("findings") or []
