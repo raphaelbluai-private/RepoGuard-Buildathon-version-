@@ -1,4 +1,4 @@
-from source_adapters import (
+from provider_credentials import (
     provider_connection_status,
     provider_credential_requirements,
 )
