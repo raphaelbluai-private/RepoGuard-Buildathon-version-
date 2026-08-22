@@ -6,11 +6,10 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from source_adapters import adapter_version
+
 SCANNER_VERSION = os.environ.get("REPOGUARD_SCANNER_VERSION", "1.0.0")
 RULESET_VERSION = os.environ.get("REPOGUARD_RULESET_VERSION", "1.0.0")
-ADAPTER_VERSIONS = {
-    "github": os.environ.get("REPOGUARD_GITHUB_ADAPTER_VERSION", "github-1.0.0"),
-}
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -46,6 +45,10 @@ def build_provenance(
     provider_key = provider.lower()
     ts = timestamp or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     result_hash = canonical_result_hash(result)
+    try:
+        active_adapter_version = adapter_version(provider_key)
+    except ValueError:
+        active_adapter_version = f"{provider_key}-1.0.0"
     identity = {
         "source_provider": provider_key,
         "repository": repository,
@@ -53,7 +56,7 @@ def build_provenance(
         "commit_sha": commit_sha,
         "scanner_version": SCANNER_VERSION,
         "ruleset_version": RULESET_VERSION,
-        "adapter_version": ADAPTER_VERSIONS.get(provider_key, f"{provider_key}-1.0.0"),
+        "adapter_version": active_adapter_version,
         "result_hash": result_hash,
     }
     scan_id = "rg_" + hashlib.sha256(_canonical_json(identity)).hexdigest()[:24]
