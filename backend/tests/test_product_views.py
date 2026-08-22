@@ -3,9 +3,24 @@ from commerce_contracts import provider_capabilities, remediation_view, safe_to_
 
 def test_provider_contract_preserves_original_multi_source_scope():
     caps = provider_capabilities()
-    assert caps["github"]["status"] == "active"
-    for provider in ["gitlab", "bitbucket", "azure_devops", "gitea", "codeberg", "aws_codecommit"]:
-        assert provider in caps
+    expected = {
+        "github",
+        "gitlab",
+        "bitbucket",
+        "azure_devops",
+        "gitea",
+        "gogs",
+        "codeberg",
+        "aws_codecommit",
+        "google_cloud_source_repositories",
+        "sourcehut",
+        "onedev",
+        "sourceforge",
+    }
+    assert expected <= set(caps)
+    for provider in expected:
+        assert caps[provider]["status"] == "active"
+        assert caps[provider]["adapter_version"]
 
 
 def test_safe_to_ship_view_excludes_full_findings():
