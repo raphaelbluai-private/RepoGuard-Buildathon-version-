@@ -2,22 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_PROVIDER_CAPABILITIES = {
-    "github": {"status": "active", "adapter_version": "github-1.0.0"},
-    "gitlab": {"status": "planned"},
-    "bitbucket": {"status": "planned"},
-    "azure_devops": {"status": "planned"},
-    "gitea": {"status": "planned"},
-    "codeberg": {"status": "planned"},
-    "aws_codecommit": {"status": "planned"},
-    "sourcehut": {"status": "planned"},
-    "onedev": {"status": "planned"},
-    "sourceforge": {"status": "planned"},
-}
-
-
-def provider_capabilities() -> dict[str, dict[str, Any]]:
-    return {k: dict(v) for k, v in _PROVIDER_CAPABILITIES.items()}
+from source_adapters import provider_capabilities
 
 
 def safe_to_ship_view(result: dict[str, Any], provenance: dict[str, Any]) -> dict[str, Any]:
