@@ -12,7 +12,8 @@ from commerce_contracts import provider_capabilities, remediation_view, safe_to_
 from commerce_telemetry import record_event
 from product_catalog import PRODUCTS, discovery_catalog, get_product
 from provenance import build_attestation, build_provenance
-from scanner import scan_repo
+from provider_scanner import scan_repo_provider
+from source_adapters import credentials_configured, normalize_provider_key, repo_head_identity
 
 from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
@@ -21,7 +22,7 @@ from x402.mechanisms.evm.exact import ExactEvmServerScheme
 from x402.server import x402ResourceServer
 
 
-app = FastAPI(title="RepoGuard Agent Commerce API", version="2.0.0")
+app = FastAPI(title="RepoGuard Agent Commerce API", version="2.1.0")
 
 X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NETWORK", "eip155:84532"))
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
@@ -30,11 +31,11 @@ X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https:/
 
 @app.get("/v1/health", include_in_schema=False)
 def v1_health():
-    """Railway compatibility healthcheck for legacy deployment metadata."""
     return {
         "status": "ok",
         "service": "RepoGuard",
-        "api_version": "2.0.0",
+        "api_version": "2.1.0",
+        "provider_adapters": "active",
     }
 
 
@@ -48,7 +49,7 @@ class VerifyCommitRequest(RepoRequest):
 
 
 def _provider_key(provider: str) -> str:
-    return (provider or "github").strip().lower().replace("-", "_").replace(" ", "_")
+    return normalize_provider_key(provider)
 
 
 def _require_active_provider(provider: str) -> str:
@@ -66,50 +67,58 @@ def _require_active_provider(provider: str) -> str:
                 "error": "PROVIDER_ADAPTER_NOT_ACTIVE",
                 "provider": key,
                 "status": capabilities[key].get("status"),
-                "message": "RepoGuard preserves this provider in the source-provider contract, but its production adapter is not active yet.",
             },
         )
     return key
 
 
+def _identity(provider: str, repo: str) -> tuple[str, str | None, str]:
+    try:
+        return repo_head_identity(provider, repo)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "INVALID_REPOSITORY", "message": str(exc)}) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail={"error": "PROVIDER_TIMEOUT", "provider": provider}) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail={"error": "ADAPTER_RUNTIME_ERROR", "message": str(exc)}) from exc
+
+
 def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
     provider = _require_active_provider(body.provider)
-    if provider != "github":
-        raise HTTPException(status_code=501, detail={"error": "PROVIDER_ADAPTER_NOT_ACTIVE", "provider": provider})
-
     started = time.monotonic()
-    repo_key, head_sha = legacy._repo_head_identity(body.repo)
-    cached = legacy._cache_get(repo_key, head_sha)
+    repo_key, head_sha, identity_url = _identity(provider, body.repo)
+
+    cached = legacy._cache_get(repo_key, head_sha) if head_sha else None
     cache_hit = cached is not None
 
     if cache_hit:
         result = cached
     else:
         try:
-            result = scan_repo(body.repo)
+            result = scan_repo_provider(provider, body.repo)
         except Exception as exc:
             result = {
                 "ok": False,
                 "error": "SCAN_ERROR",
+                "provider": provider,
                 "message": f"Scan failed unexpectedly: {type(exc).__name__}",
             }
-        legacy._cache_put(repo_key, head_sha, result)
+        if head_sha and isinstance(result, dict) and result.get("ok"):
+            legacy._cache_put(repo_key, head_sha, result)
 
     if not isinstance(result, dict):
-        result = {"ok": False, "error": "INVALID_SCAN_RESULT"}
+        result = {"ok": False, "error": "INVALID_SCAN_RESULT", "provider": provider}
 
-    repository = repo_key or body.repo
-    repository_url = (
-        (result.get("repo") or {}).get("url")
-        if isinstance(result.get("repo"), dict)
-        else None
-    ) or f"https://github.com/{repository}"
+    result_repo = result.get("repo") if isinstance(result.get("repo"), dict) else {}
+    repository = result_repo.get("fullName") or repo_key.split(":", 1)[-1] or body.repo
+    repository_url = result_repo.get("url") or result.get("repository_url") or identity_url
+    effective_sha = result.get("commitSha") or head_sha
 
     provenance = build_provenance(
         provider=provider,
         repository=repository,
         repository_url=repository_url,
-        commit_sha=head_sha,
+        commit_sha=effective_sha,
         result=result,
     )
 
@@ -121,6 +130,7 @@ def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
         cache_hit=cache_hit,
         detail={
             "sku": sku,
+            "provider": provider,
             "repository": repository,
             "scan_id": provenance["scan_id"],
             "latency_ms": latency_ms,
@@ -130,7 +140,7 @@ def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
     return {
         "provider": provider,
         "repository": repository,
-        "head_sha": head_sha,
+        "head_sha": effective_sha,
         "cache_hit": cache_hit,
         "latency_ms": latency_ms,
         "result": result,
@@ -161,6 +171,7 @@ def preflight(body: RepoRequest):
             "scan_available": False,
             "products": discovery_catalog(),
         }
+
     if provider_info.get("status") != "active":
         return {
             "provider": provider,
@@ -170,37 +181,77 @@ def preflight(body: RepoRequest):
             "products": discovery_catalog(),
         }
 
-    repo_key, head_sha = legacy._repo_head_identity(body.repo)
-    return {
-        "provider": provider,
-        "supported": True,
-        "adapter_status": "active",
-        "reachable": bool(repo_key and head_sha),
-        "repository": repo_key or body.repo,
-        "commit_sha": head_sha,
-        "scan_available": bool(head_sha),
-        "products": discovery_catalog(),
-    }
+    if provider_info.get("auth_required") and not credentials_configured(provider):
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "credentials_required": True,
+            "credentials_configured": False,
+            "scan_available": False,
+            "provider_info": provider_info,
+            "products": discovery_catalog(),
+        }
+
+    try:
+        repo_key, head_sha, repository_url = repo_head_identity(provider, body.repo)
+        repository = repo_key.split(":", 1)[-1]
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "reachable": bool(head_sha),
+            "repository": repository,
+            "repository_url": repository_url,
+            "commit_sha": head_sha,
+            "scan_available": bool(head_sha),
+            "provider_info": provider_info,
+            "products": discovery_catalog(),
+        }
+    except ValueError as exc:
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "reachable": False,
+            "scan_available": False,
+            "error": "INVALID_REPOSITORY",
+            "message": str(exc),
+            "provider_info": provider_info,
+            "products": discovery_catalog(),
+        }
+    except (TimeoutError, RuntimeError) as exc:
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "reachable": False,
+            "scan_available": False,
+            "error": "PROVIDER_UNAVAILABLE",
+            "message": str(exc),
+            "provider_info": provider_info,
+            "products": discovery_catalog(),
+        }
 
 
 @app.post("/v1/repoguard/verify")
 def verify_commit(body: VerifyCommitRequest):
     provider = _require_active_provider(body.provider)
-    if provider != "github":
-        raise HTTPException(status_code=501, detail={"error": "PROVIDER_ADAPTER_NOT_ACTIVE", "provider": provider})
-    repo_key, current_sha = legacy._repo_head_identity(body.repo)
+    repo_key, current_sha, repository_url = _identity(provider, body.repo)
     matched = bool(current_sha and current_sha == body.expected_commit_sha)
+    repository = repo_key.split(":", 1)[-1]
     record_event(
         "product_fulfilled",
         status_code=200,
         network=X402_NETWORK,
-        detail={"sku": "verify_commit", "repository": repo_key or body.repo, "matches": matched},
+        detail={"sku": "verify_commit", "provider": provider, "repository": repository, "matches": matched},
     )
     return {
         "product": "verify_commit",
         "price_usd": get_product("verify_commit").price_usd,
         "provider": provider,
-        "repository": repo_key or body.repo,
+        "repository": repository,
+        "repository_url": repository_url,
         "expected_commit_sha": body.expected_commit_sha,
         "current_commit_sha": current_sha,
         "matches": matched,
@@ -227,6 +278,7 @@ def repo_scan(body: RepoRequest):
         "product": "repo_scan",
         "price_usd": get_product("repo_scan").price_usd,
         "network": X402_NETWORK,
+        "provider": scan["provider"],
         "cache": {
             "hit": scan["cache_hit"],
             "repoHeadSha": scan["head_sha"],
@@ -287,6 +339,4 @@ if X402_PAY_TO:
     app.add_middleware(PaymentMiddlewareASGI, routes=paid_routes, server=x402_server)
 
 
-# Preserve the existing human-facing RepoGuard application and legacy routes.
-# The new /v1/repoguard commerce routes above are registered first and win.
 app.mount("/", legacy.app)
