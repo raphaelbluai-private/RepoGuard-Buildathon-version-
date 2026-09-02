@@ -1,10 +1,19 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "repoguard"
+version = "1.0.0"
+description = "Deterministic repository safe-to-ship scanner"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.135.3",
     "pydantic>=2.12.5",
+    "requests>=2.32.0",
     "uvicorn>=0.44.0",
+    "x402[evm,extensions,fastapi]>=2.20.0,<3",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "pytest>=8.3.0",
+    "ruff>=0.11.0",
 ]
