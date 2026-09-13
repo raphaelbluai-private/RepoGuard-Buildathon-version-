@@ -48,6 +48,7 @@ jobs:
           backend/provider_scanner.py
           backend/source_adapters.py
           backend/provider_credentials.py
+          backend/launch_security.py
           backend/commercial.py
           backend/commercial_app.py
           backend/commerce_app_v2.py
@@ -65,6 +66,7 @@ jobs:
           backend/provider_scanner.py
           backend/source_adapters.py
           backend/provider_credentials.py
+          backend/launch_security.py
           backend/commercial.py
           backend/commercial_app.py
           backend/commerce_app_v2.py
