@@ -1,3 +1,6 @@
+from fastapi.middleware.cors import CORSMiddleware
+
+import app as legacy_app_module
 from launch_security import (
     cors_origins,
     is_legacy_route_blocked,
@@ -54,3 +57,9 @@ def test_cors_parses_explicit_origins(monkeypatch):
         "https://repoguard.example, https://app.example",
     )
     assert cors_origins() == ["https://repoguard.example", "https://app.example"]
+
+
+def test_legacy_app_does_not_expose_wildcard_browser_cors():
+    cors = [m for m in legacy_app_module.app.user_middleware if m.cls is CORSMiddleware]
+    assert cors
+    assert cors[0].kwargs.get("allow_origins") != ["*"]
