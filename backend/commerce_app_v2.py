@@ -4,12 +4,18 @@ import os
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
+from launch_security import (
+    is_legacy_route_blocked,
+    is_public_preview_only,
+    provider_allowed_in_launch,
+)
 from product_catalog import PRODUCTS, discovery_catalog, get_product
 from provenance import build_attestation, build_provenance
 from provider_scanner import scan_repo_provider
@@ -22,11 +28,37 @@ from x402.mechanisms.evm.exact import ExactEvmServerScheme
 from x402.server import x402ResourceServer
 
 
-app = FastAPI(title="RepoGuard Agent Commerce API", version="2.1.0")
+app = FastAPI(title="RepoGuard Agent Commerce API", version="2.2.0")
 
 X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NETWORK", "eip155:84532"))
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
+MAX_REQUEST_BYTES = int(os.environ.get("REPOGUARD_MAX_REQUEST_BYTES", "65536"))
+
+
+@app.middleware("http")
+async def launch_security_boundary(request: Request, call_next):
+    if is_legacy_route_blocked(request.url.path):
+        return JSONResponse(
+            status_code=410,
+            content={
+                "error": "LEGACY_ROUTE_DISABLED",
+                "message": "This legacy/demo route is disabled on the hardened commerce service.",
+            },
+        )
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "REQUEST_TOO_LARGE", "max_bytes": MAX_REQUEST_BYTES},
+                )
+        except ValueError:
+            return JSONResponse(status_code=400, content={"error": "INVALID_CONTENT_LENGTH"})
+
+    return await call_next(request)
 
 
 @app.get("/v1/health", include_in_schema=False)
@@ -34,18 +66,20 @@ def v1_health():
     return {
         "status": "ok",
         "service": "RepoGuard",
-        "api_version": "2.1.0",
+        "api_version": "2.2.0",
         "provider_adapters": "active",
+        "public_preview_only": is_public_preview_only(),
+        "x402_configured": bool(X402_PAY_TO),
     }
 
 
 class RepoRequest(BaseModel):
-    repo: str
-    provider: str = "github"
+    repo: str = Field(min_length=1, max_length=2048)
+    provider: str = Field(default="github", min_length=1, max_length=64)
 
 
 class VerifyCommitRequest(RepoRequest):
-    expected_commit_sha: str
+    expected_commit_sha: str = Field(min_length=7, max_length=128)
 
 
 def _provider_key(provider: str) -> str:
@@ -60,13 +94,23 @@ def _require_active_provider(provider: str) -> str:
             status_code=422,
             detail={"error": "UNSUPPORTED_PROVIDER", "provider": key, "providers": capabilities},
         )
-    if capabilities[key].get("status") != "active":
+    provider_info = capabilities[key]
+    if provider_info.get("status") != "active":
         raise HTTPException(
             status_code=501,
             detail={
                 "error": "PROVIDER_ADAPTER_NOT_ACTIVE",
                 "provider": key,
-                "status": capabilities[key].get("status"),
+                "status": provider_info.get("status"),
+            },
+        )
+    if not provider_allowed_in_launch(provider_info):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PUBLIC_PREVIEW_ONLY",
+                "provider": key,
+                "message": "Authenticated/private provider access is disabled for the current launch scope.",
             },
         )
     return key
@@ -154,6 +198,7 @@ def products():
         "service": "RepoGuard",
         "positioning": "Deterministic pre-deployment assurance for agents and software pipelines.",
         "network": X402_NETWORK,
+        "public_preview_only": is_public_preview_only(),
         "products": discovery_catalog(),
         "providers": provider_capabilities(),
     }
@@ -178,6 +223,18 @@ def preflight(body: RepoRequest):
             "supported": True,
             "adapter_status": provider_info.get("status"),
             "scan_available": False,
+            "products": discovery_catalog(),
+        }
+
+    if not provider_allowed_in_launch(provider_info):
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "scan_available": False,
+            "error": "PUBLIC_PREVIEW_ONLY",
+            "message": "This provider requires authenticated/private access and is disabled for the current launch scope.",
+            "provider_info": provider_info,
             "products": discovery_catalog(),
         }
 
