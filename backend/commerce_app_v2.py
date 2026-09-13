@@ -12,6 +12,7 @@ import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
 from launch_security import (
+    cors_origins,
     is_legacy_route_blocked,
     is_public_preview_only,
     provider_allowed_in_launch,
@@ -34,6 +35,32 @@ X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NE
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
 MAX_REQUEST_BYTES = int(os.environ.get("REPOGUARD_MAX_REQUEST_BYTES", "65536"))
+
+_CORS_HEADERS = (
+    "access-control-allow-origin",
+    "access-control-allow-methods",
+    "access-control-allow-headers",
+    "access-control-allow-credentials",
+    "access-control-expose-headers",
+)
+
+
+def _apply_hardened_cors(request: Request, response):
+    for header in _CORS_HEADERS:
+        if header in response.headers:
+            del response.headers[header]
+
+    origin = request.headers.get("origin")
+    approved = cors_origins()
+    if origin and origin in approved:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers[
+            "Access-Control-Allow-Headers"
+        ] = "Content-Type, Authorization, Payment-Signature, PAYMENT-SIGNATURE"
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
+    return response
 
 
 @app.middleware("http")
@@ -58,7 +85,8 @@ async def launch_security_boundary(request: Request, call_next):
         except ValueError:
             return JSONResponse(status_code=400, content={"error": "INVALID_CONTENT_LENGTH"})
 
-    return await call_next(request)
+    response = await call_next(request)
+    return _apply_hardened_cors(request, response)
 
 
 @app.get("/v1/health", include_in_schema=False)
