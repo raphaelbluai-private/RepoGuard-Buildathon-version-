@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 import commerce_app_v2
 from launch_security import (
+    ScanConcurrencyGate,
     cors_origins,
     is_legacy_route_blocked,
     is_public_preview_only,
@@ -69,3 +70,12 @@ def test_hardened_commerce_surface_does_not_emit_wildcard_cors():
         },
     )
     assert response.headers.get("access-control-allow-origin") != "*"
+
+
+def test_scan_concurrency_gate_fails_closed_when_capacity_is_exhausted():
+    gate = ScanConcurrencyGate(limit=1)
+    assert gate.try_acquire() is True
+    assert gate.try_acquire() is False
+    gate.release()
+    assert gate.try_acquire() is True
+    gate.release()
