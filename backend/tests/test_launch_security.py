@@ -1,6 +1,6 @@
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.testclient import TestClient
 
-import app as legacy_app_module
+import commerce_app_v2
 from launch_security import (
     cors_origins,
     is_legacy_route_blocked,
@@ -59,7 +59,13 @@ def test_cors_parses_explicit_origins(monkeypatch):
     assert cors_origins() == ["https://repoguard.example", "https://app.example"]
 
 
-def test_legacy_app_does_not_expose_wildcard_browser_cors():
-    cors = [m for m in legacy_app_module.app.user_middleware if m.cls is CORSMiddleware]
-    assert cors
-    assert cors[0].kwargs.get("allow_origins") != ["*"]
+def test_hardened_commerce_surface_does_not_emit_wildcard_cors():
+    client = TestClient(commerce_app_v2.app)
+    response = client.options(
+        "/api/health",
+        headers={
+            "Origin": "https://attacker.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.headers.get("access-control-allow-origin") != "*"
