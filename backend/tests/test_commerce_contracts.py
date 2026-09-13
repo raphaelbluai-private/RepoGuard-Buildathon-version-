@@ -55,7 +55,7 @@ def test_provenance_is_commit_and_version_bound():
     assert p["commit_sha"] == "abc123"
     assert p["scanner_version"]
     assert p["ruleset_version"]
-    assert p["adapter_version"] == "github-git-1.0.0"
+    assert p["adapter_version"] == "github-git-1.1.0"
     assert p["safe_to_ship"] is True
     assert p["result_hash"].startswith("sha256:")
     assert p["scan_id"].startswith("rg_")
