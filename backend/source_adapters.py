@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import os
 import re
+import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -21,18 +23,18 @@ class RepositoryRef:
 
 
 _PROVIDER_CAPABILITIES: dict[str, dict[str, Any]] = {
-    "github": {"status": "active", "adapter_version": "github-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "gitlab": {"status": "active", "adapter_version": "gitlab-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "bitbucket": {"status": "active", "adapter_version": "bitbucket-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "azure_devops": {"status": "active", "adapter_version": "azure-devops-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "gitea": {"status": "active", "adapter_version": "gitea-git-1.0.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
-    "gogs": {"status": "active", "adapter_version": "gogs-git-1.0.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
-    "codeberg": {"status": "active", "adapter_version": "codeberg-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "aws_codecommit": {"status": "active", "adapter_version": "aws-codecommit-git-1.0.0", "public_scan": False, "auth_required": True},
-    "google_cloud_source_repositories": {"status": "active", "adapter_version": "gcp-csr-git-1.0.0", "public_scan": False, "auth_required": True, "service_state": "end_of_sale"},
-    "sourcehut": {"status": "active", "adapter_version": "sourcehut-git-1.0.0", "public_scan": True, "auth_optional": True},
-    "onedev": {"status": "active", "adapter_version": "onedev-git-1.0.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
-    "sourceforge": {"status": "active", "adapter_version": "sourceforge-git-1.0.0", "public_scan": True, "auth_optional": True},
+    "github": {"status": "active", "adapter_version": "github-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "gitlab": {"status": "active", "adapter_version": "gitlab-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "bitbucket": {"status": "active", "adapter_version": "bitbucket-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "azure_devops": {"status": "active", "adapter_version": "azure-devops-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "gitea": {"status": "active", "adapter_version": "gitea-git-1.1.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
+    "gogs": {"status": "active", "adapter_version": "gogs-git-1.1.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
+    "codeberg": {"status": "active", "adapter_version": "codeberg-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "aws_codecommit": {"status": "active", "adapter_version": "aws-codecommit-git-1.1.0", "public_scan": False, "auth_required": True},
+    "google_cloud_source_repositories": {"status": "active", "adapter_version": "gcp-csr-git-1.1.0", "public_scan": False, "auth_required": True, "service_state": "end_of_sale"},
+    "sourcehut": {"status": "active", "adapter_version": "sourcehut-git-1.1.0", "public_scan": True, "auth_optional": True},
+    "onedev": {"status": "active", "adapter_version": "onedev-git-1.1.0", "public_scan": True, "requires_full_url": True, "auth_optional": True},
+    "sourceforge": {"status": "active", "adapter_version": "sourceforge-git-1.1.0", "public_scan": True, "auth_optional": True},
 }
 
 _ALIASES = {
@@ -61,6 +63,19 @@ _PROVIDER_WORKFLOW_PATHS: dict[str, list[str]] = {
     "onedev": [".onedev-buildspec.yml", ".onedev-buildspec.yaml"],
     "sourceforge": [],
 }
+
+_PROVIDER_HOSTS = {
+    "github": {"github.com"},
+    "gitlab": {"gitlab.com"},
+    "bitbucket": {"bitbucket.org"},
+    "azure_devops": {"dev.azure.com"},
+    "codeberg": {"codeberg.org"},
+    "google_cloud_source_repositories": {"source.developers.google.com"},
+    "sourcehut": {"git.sr.ht"},
+    "sourceforge": {"git.code.sf.net"},
+}
+
+_SELF_HOSTED = {"gitea", "gogs", "onedev"}
 
 
 def normalize_provider_key(provider: str) -> str:
@@ -106,6 +121,68 @@ def _id_from_url(url: str) -> str:
     return _strip_git_suffix(path)
 
 
+def _is_forbidden_ip(value: str) -> bool:
+    ip = ipaddress.ip_address(value)
+    return any((
+        ip.is_private,
+        ip.is_loopback,
+        ip.is_link_local,
+        ip.is_multicast,
+        ip.is_reserved,
+        ip.is_unspecified,
+    ))
+
+
+def _resolve_host_ips(host: str) -> set[str]:
+    try:
+        return {item[4][0] for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+    except socket.gaierror as exc:
+        raise ValueError("Repository host could not be resolved") from exc
+
+
+def _validate_destination_ips(host: str) -> None:
+    try:
+        if _is_forbidden_ip(host):
+            raise ValueError("Repository destination resolves to a private or reserved network")
+        return
+    except ValueError as exc:
+        if "private or reserved" in str(exc):
+            raise
+    for value in _resolve_host_ips(host):
+        if _is_forbidden_ip(value):
+            raise ValueError("Repository destination resolves to a private or reserved network")
+
+
+def _provider_host_matches(provider: str, host: str) -> bool:
+    if provider == "aws_codecommit":
+        return bool(re.fullmatch(r"git-codecommit\.[a-z0-9-]+\.amazonaws\.com", host))
+    return host in _PROVIDER_HOSTS.get(provider, set())
+
+
+def _validate_full_clone_url(provider: str, url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("Repository clone URLs must use HTTPS")
+    if parsed.username or parsed.password:
+        raise ValueError("Repository URLs must not contain embedded credentials")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("Repository URL must contain a hostname")
+    try:
+        if _is_forbidden_ip(host):
+            raise ValueError("Repository destination resolves to a private or reserved network")
+    except ValueError as exc:
+        if "private or reserved" in str(exc):
+            raise
+    if provider in _SELF_HOSTED:
+        if os.getenv("REPOGUARD_ALLOW_SELF_HOSTED_PROVIDERS") != "1":
+            raise ValueError("self-hosted provider URLs are disabled for the public launch profile")
+        _validate_destination_ips(host)
+        return
+    if not _provider_host_matches(provider, host):
+        raise ValueError("Repository URL host does not match provider")
+
+
 def build_clone_url(provider: str, repo_input: str) -> RepositoryRef:
     key = normalize_provider_key(provider)
     if key not in _PROVIDER_CAPABILITIES:
@@ -116,9 +193,9 @@ def build_clone_url(provider: str, repo_input: str) -> RepositoryRef:
         raise ValueError("Repository is required")
 
     if raw.startswith(("https://", "http://")):
-        clone_url = raw
-        repo_id = _id_from_url(clone_url)
-        return RepositoryRef(key, repo_id, _strip_git_suffix(clone_url), clone_url)
+        _validate_full_clone_url(key, raw)
+        repo_id = _id_from_url(raw)
+        return RepositoryRef(key, repo_id, _strip_git_suffix(raw), raw)
 
     raw = raw.removesuffix(".git").strip("/")
     if key == "github":
@@ -154,7 +231,7 @@ def build_clone_url(provider: str, repo_input: str) -> RepositoryRef:
         if len(parts) != 2:
             raise ValueError("Google Cloud Source Repositories shorthand must be project/repo or a full clone URL")
         clone_url = f"https://source.developers.google.com/p/{parts[0]}/r/{parts[1]}"
-    elif key in {"gitea", "gogs", "onedev"}:
+    elif key in _SELF_HOSTED:
         raise ValueError(f"{key} is self-hostable; provide the full HTTPS clone URL")
     else:
         raise ValueError(f"Unsupported provider: {provider}")
@@ -208,24 +285,47 @@ def credentials_configured(provider: str) -> bool:
     return not caps.get("auth_required") or _auth_header(key) is not None
 
 
-def _git_env(provider: str) -> dict[str, str]:
+def _git_env(provider: str, clone_url: str | None = None) -> dict[str, str]:
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     header = _auth_header(provider)
-    if header:
-        env["GIT_CONFIG_COUNT"] = "1"
-        env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
-        env["GIT_CONFIG_VALUE_0"] = header
+    configs: list[tuple[str, str]] = []
+    if header and clone_url:
+        parsed = urlparse(clone_url)
+        host = parsed.hostname
+        if not host:
+            raise ValueError("Repository URL must contain a hostname")
+        configs.append((f"http.https://{host}/.extraHeader", header))
+    if clone_url:
+        configs.append(("http.followRedirects", "false"))
+    if configs:
+        env["GIT_CONFIG_COUNT"] = str(len(configs))
+        for index, (key, value) in enumerate(configs):
+            env[f"GIT_CONFIG_KEY_{index}"] = key
+            env[f"GIT_CONFIG_VALUE_{index}"] = value
     return env
 
 
-def _run_git(args: list[str], provider: str, timeout: int = 20, cwd: str | None = None, text: bool = True):
+def _run_git(
+    args: list[str],
+    provider: str,
+    timeout: int = 20,
+    cwd: str | None = None,
+    text: bool = True,
+    clone_url: str | None = None,
+):
+    if clone_url:
+        parsed = urlparse(clone_url)
+        host = parsed.hostname
+        if not host:
+            raise ValueError("Repository URL must contain a hostname")
+        _validate_destination_ips(host)
     try:
         return subprocess.run(
             ["git", *args],
             cwd=cwd,
-            env=_git_env(provider),
+            env=_git_env(provider, clone_url),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
@@ -240,7 +340,12 @@ def _run_git(args: list[str], provider: str, timeout: int = 20, cwd: str | None 
 
 def repo_head_identity(provider: str, repo_input: str) -> tuple[str, str | None, str]:
     ref = build_clone_url(provider, repo_input)
-    proc = _run_git(["ls-remote", ref.clone_url, "HEAD"], ref.provider, timeout=15)
+    proc = _run_git(
+        ["ls-remote", ref.clone_url, "HEAD"],
+        ref.provider,
+        timeout=15,
+        clone_url=ref.clone_url,
+    )
     if proc.returncode != 0:
         return f"{ref.provider}:{ref.repository_id}", None, ref.repository_url
     line = (proc.stdout or "").strip().splitlines()
@@ -280,11 +385,22 @@ def fetch_snapshot(provider: str, repo_input: str, core_files: list[str]) -> dic
 
     with tempfile.TemporaryDirectory(prefix="repoguard-") as tmp:
         repo_dir = str(Path(tmp) / "repo")
-        clone = _run_git(
-            ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", ref.clone_url, repo_dir],
-            ref.provider,
-            timeout=30,
-        )
+        try:
+            clone = _run_git(
+                ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", ref.clone_url, repo_dir],
+                ref.provider,
+                timeout=30,
+                clone_url=ref.clone_url,
+            )
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "error": "UNSAFE_REPOSITORY_DESTINATION",
+                "provider": ref.provider,
+                "repository": ref.repository_id,
+                "repository_url": ref.repository_url,
+                "message": str(exc),
+            }
         if clone.returncode != 0:
             return {
                 "ok": False,
