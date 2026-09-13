@@ -12,6 +12,7 @@ import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
 from launch_security import (
+    ScanConcurrencyGate,
     cors_origins,
     is_legacy_route_blocked,
     is_public_preview_only,
@@ -35,6 +36,8 @@ X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NE
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
 MAX_REQUEST_BYTES = int(os.environ.get("REPOGUARD_MAX_REQUEST_BYTES", "65536"))
+MAX_CONCURRENT_SCANS = int(os.environ.get("REPOGUARD_MAX_CONCURRENT_SCANS", "4"))
+SCAN_CONCURRENCY_GATE = ScanConcurrencyGate(MAX_CONCURRENT_SCANS)
 
 _CORS_HEADERS = (
     "access-control-allow-origin",
@@ -98,6 +101,7 @@ def v1_health():
         "provider_adapters": "active",
         "public_preview_only": is_public_preview_only(),
         "x402_configured": bool(X402_PAY_TO),
+        "max_concurrent_scans": MAX_CONCURRENT_SCANS,
     }
 
 
@@ -156,6 +160,22 @@ def _identity(provider: str, repo: str) -> tuple[str, str | None, str]:
 
 
 def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
+    if not SCAN_CONCURRENCY_GATE.try_acquire():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "SCAN_CAPACITY_EXHAUSTED",
+                "message": "RepoGuard scan capacity is temporarily full. Retry shortly.",
+            },
+            headers={"Retry-After": "2"},
+        )
+    try:
+        return _run_canonical_scan_acquired(body, sku)
+    finally:
+        SCAN_CONCURRENCY_GATE.release()
+
+
+def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     provider = _require_active_provider(body.provider)
     started = time.monotonic()
     repo_key, head_sha, identity_url = _identity(provider, body.repo)
