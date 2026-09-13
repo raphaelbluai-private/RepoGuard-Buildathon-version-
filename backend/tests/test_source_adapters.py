@@ -48,7 +48,7 @@ def test_self_hosted_adapters_require_full_url():
 
 def test_full_https_url_is_accepted_for_self_hosted_adapter_when_explicitly_enabled(monkeypatch):
     monkeypatch.setenv("REPOGUARD_ALLOW_SELF_HOSTED_PROVIDERS", "1")
-    monkeypatch.setattr("source_adapters._resolve_host_ips", lambda host: {"203.0.113.10"})
+    monkeypatch.setattr("source_adapters._resolve_host_ips", lambda host: {"8.8.8.8"})
     ref = build_clone_url("gitea", "https://git.example.com/acme/widget.git")
     assert ref.clone_url == "https://git.example.com/acme/widget.git"
     assert ref.repository_id == "acme/widget"
