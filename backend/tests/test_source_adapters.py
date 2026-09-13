@@ -1,6 +1,11 @@
 import pytest
 
-from source_adapters import build_clone_url, normalize_provider_key, provider_capabilities
+from source_adapters import (
+    _git_env,
+    build_clone_url,
+    normalize_provider_key,
+    provider_capabilities,
+)
 
 
 def test_all_original_source_adapters_are_active():
@@ -41,7 +46,44 @@ def test_self_hosted_adapters_require_full_url():
             build_clone_url(provider, "owner/repo")
 
 
-def test_full_https_url_is_accepted_for_self_hosted_adapter():
+def test_full_https_url_is_accepted_for_self_hosted_adapter_when_explicitly_enabled(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_ALLOW_SELF_HOSTED_PROVIDERS", "1")
+    monkeypatch.setattr("source_adapters._resolve_host_ips", lambda host: {"203.0.113.10"})
     ref = build_clone_url("gitea", "https://git.example.com/acme/widget.git")
     assert ref.clone_url == "https://git.example.com/acme/widget.git"
     assert ref.repository_id == "acme/widget"
+
+
+def test_self_hosted_full_url_is_blocked_by_default(monkeypatch):
+    monkeypatch.delenv("REPOGUARD_ALLOW_SELF_HOSTED_PROVIDERS", raising=False)
+    with pytest.raises(ValueError, match="self-hosted provider URLs are disabled"):
+        build_clone_url("gitea", "https://git.example.com/acme/widget.git")
+
+
+def test_http_clone_urls_are_rejected():
+    with pytest.raises(ValueError, match="HTTPS"):
+        build_clone_url("github", "http://github.com/acme/widget.git")
+
+
+def test_hosted_provider_rejects_mismatched_host():
+    with pytest.raises(ValueError, match="does not match provider"):
+        build_clone_url("gitlab", "https://attacker.example/acme/widget.git")
+
+
+def test_clone_url_rejects_embedded_credentials():
+    with pytest.raises(ValueError, match="embedded credentials"):
+        build_clone_url("github", "https://user:pass@github.com/acme/widget.git")
+
+
+def test_self_hosted_private_ip_is_rejected_even_when_enabled(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_ALLOW_SELF_HOSTED_PROVIDERS", "1")
+    with pytest.raises(ValueError, match="private or reserved"):
+        build_clone_url("gitea", "https://127.0.0.1/acme/widget.git")
+
+
+def test_git_auth_header_is_scoped_to_repository_host(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_GITLAB_TOKEN", "test-token")
+    env = _git_env("gitlab", "https://gitlab.com/acme/widget.git")
+    assert env["GIT_CONFIG_KEY_0"] == "http.https://gitlab.com/.extraHeader"
+    assert env["GIT_CONFIG_KEY_1"] == "http.followRedirects"
+    assert env["GIT_CONFIG_VALUE_1"] == "false"
