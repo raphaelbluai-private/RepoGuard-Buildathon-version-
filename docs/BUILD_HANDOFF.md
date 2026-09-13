@@ -5,92 +5,135 @@
 **Canonical repo:** `raphaelbluai-private/RepoGuard-Buildathon-version-`  
 **Active branch:** `x402-production`  
 **Mission weight:** Critical  
+**Primary ship path:** hardened public-repository scanner + x402 Base Sepolia acceptance  
 
 ## Current Durable State
 
-Installed into the canonical branch:
+Installed in the canonical branch:
 
 - `docs/governance/RAPHAEL_MASTER_SPEC_v1.6_GOVERNANCE.md`
 - `docs/governance/RAPHAEL_SECURITY_GOVERNANCE_PROTOCOL.md`
 - `docs/REPO_GUARD_CONTINUOUS_COMPLETION_BUILD_TASK.md`
 - `.build-state.json`
+- `docs/BUILD_HANDOFF.md`
+- `docs/SESSION_RECOVERY_PROTOCOL.md`
+- `docs/mission-assurance/RG-V16-G0-RECONCILIATION.md`
+- `docs/RAPHAEL_MASTER_TREE_v1.6.md`
 
-The existing RepoGuard product foundation remains materially built: deterministic scanner, provider-neutral acquisition, provider adapters, product catalog, x402 middleware/product routes, provenance foundation, telemetry, CI, Docker packaging, and Railway deployment history.
+RAPHAEL Master Spec v1.6 presides. Older v1.2/v1.5 documents remain historical evidence only where not superseded.
 
-## Current Governance Change
+## G0 Status
 
-RAPHAEL Master Spec v1.6 now presides over RepoGuard. Historical v1.2/v1.5 mission documents remain evidence/history where useful but may not override v1.6.
+**G0 canonical reconciliation: substantially complete.**
 
-The x402 rail is the named ship-path milestone. The build may pursue the earliest narrow production scope that can satisfy v1.6, currently defined as a public-repository-only x402 scanner release. Private-repository/customer credential access remains outside the initial authorized exposure until tenant authorization/isolation is proven.
+Current state is recoverable from the repository without chat-copy dependency. Requirements, risks, decisions, interfaces, RED TEAM cases, Master Tree, build state, handoff, and recovery procedure are now persisted.
 
-## Critical Launch-Scope Security Gaps
+The exact latest branch HEAD should always be re-read at recovery time. `.build-state.json` records the last reconciled and validated checkpoints rather than pretending that a state file can name its own future commit.
 
-The following are launch blockers until verified closed for the authorized scope:
+## Current G1 Security Hardening Progress
 
-1. arbitrary caller-controlled repository URLs must not receive service credentials;
-2. SSRF/private/link-local/metadata access must be blocked;
-3. private-repository access must remain disabled until tenant authorization/isolation exists;
-4. legacy/demo/debug attack surface must be removed or gated;
-5. materially equivalent free scan bypass must not undermine paid routes;
-6. CORS/public API exposure must be production-scoped;
-7. rate/concurrency/request/repository resource controls must be bounded;
-8. production container/runtime privilege must be hardened;
-9. logs/telemetry/evidence must remain secret-safe;
-10. launch-path hostile tests must pass.
+The following launch-scope controls are implemented:
 
-## RAPHAEL v1.6 Production Realization Open Work
+1. caller-supplied full clone URLs must use HTTPS;
+2. hosted providers are bound to their expected hostnames;
+3. embedded URL credentials are rejected;
+4. private, loopback, link-local, multicast, reserved, and unspecified destinations are rejected;
+5. DNS-resolved destinations are checked before outbound Git operations;
+6. Git redirects are disabled for outbound repository acquisition;
+7. provider authentication headers are scoped to the intended HTTPS host;
+8. self-hosted Gitea/Gogs/OneDev URLs are disabled by default;
+9. public-preview mode is enabled by default;
+10. providers requiring authentication/private access are blocked from preview scope;
+11. optional service-level provider credentials are suppressed during public preview;
+12. legacy free scan, demo auth, demo controls, internal diagnostics, and old verifier routes are blocked in the hardened production composition;
+13. wildcard browser CORS from the mounted legacy app is stripped at the hardened commerce boundary;
+14. request field/body sizes are bounded;
+15. concurrent scans are bounded by a fail-closed capacity gate;
+16. the production container runs as a non-root `repoguard` user;
+17. the hardened launch profile is documented in `.env.production.example`.
 
-All applicable domains must receive current release-bound evidence:
+## Current Validation Evidence
 
-1. Source and Traceability
-2. Build and Artifact Integrity
-3. Security and Supply Chain
-4. Environment and Deployment
-5. Data and State Continuity
-6. Operational Readiness
-7. Performance and Reliability
-8. Real User Acceptance
-9. Production Authorization
+Validated code checkpoint:
 
-Track separately:
+`1fec8733234aa07cdc5da82ebaad5f2a1da8c986`
 
-- Engineering Green
-- Security Green
-- Artifact Green
-- Deployment Green
-- Operations Green
-- User Acceptance Green
-- Production Authorized
+GitHub Actions run:
+
+`34777506621`
+
+Result:
+
+- backend compile: PASSED
+- correctness-critical lint: PASSED
+- scanner/API/x402/discovery/telemetry/security regression suite: PASSED
+- frontend typecheck: PASSED
+- frontend production build: PASSED
+- production container build: PASSED
+
+Historical Green does not automatically carry forward to later source/runtime changes; release-candidate validation must be rerun on the final candidate.
+
+## Current Launch Scope
+
+The earliest proposed production authorization remains:
+
+> Public-repository deterministic RepoGuard scanner + x402 paid product rail.
+
+Private/authenticated repository access remains disabled until customer-scoped authorization and tenant isolation are implemented and verified.
+
+## Remaining G1 Work
+
+G1 remains active until launch-scope Security Green is evidenced.
+
+Required remaining work includes:
+
+1. run hostile/adversarial staging cases against SSRF, credential forwarding, URL redirects, malformed input, oversized input, concurrency/resource exhaustion, secret/log redaction, and legacy-route bypass;
+2. verify production security headers and deployed CORS behavior;
+3. run dependency/container vulnerability review and disposition findings;
+4. verify production runtime privilege and resource limits;
+5. verify platform/edge abuse protection or record the exact compensating application controls;
+6. resolve GitHub branch-protection/release-integrity gap;
+7. resolve the public repository / proprietary backend exposure decision;
+8. verify current hardened Railway deployment identity and health before moving to G2/G5 acceptance.
+
+## External / Administrative Gates
+
+These may require Principal/admin action and must not be falsely marked complete:
+
+- changing repository visibility or separating proprietary backend source;
+- enabling GitHub branch protection / required checks if not available through the current build tool;
+- credentials/accounts needed for later authenticated-provider scope;
+- Base mainnet transition;
+- Gate 8 production authorization.
 
 ## Exact Next Work Package
 
-**G0 — Canonical State Reconciliation + Continuity Completion**
+Continue **G1 — Launch-Scope Security Hardening**.
 
-1. Re-read `.build-state.json` and this handoff.
-2. Verify live `x402-production` HEAD.
-3. Inspect any commits newer than the recorded checkpoint.
-4. Reconstruct the RAPHAEL MASTER TREE from live repository evidence.
-5. Create/update requirements traceability, risk register, decision log, interface map, and RED TEAM/failure-mode record at Critical Mission depth.
-6. Verify current CI/deployment evidence against the new HEAD; do not inherit old Green automatically.
-7. Advance immediately into **G1 — launch-scope security hardening**.
+After G1 Security Green:
+
+1. G2 — x402 contract/payment/idempotency reconciliation;
+2. G3–G4 — RAPHAEL v1.6 Production Realization evidence;
+3. G5 — live Base Sepolia acceptance;
+4. G6 — external-agent acceptance;
+5. G7 — Gates 1–7 evidence package and Gate 8 presentation;
+6. G8 — continue remaining full completion automatically.
 
 ## Critical-Path Freeze
 
-Do not give discretionary refactors, aesthetic changes, speculative provider expansion, low-value edge-case work, or non-launch documentation polish critical-path priority while the x402 ship path can advance.
+No discretionary UI work, feature expansion, provider expansion, style-only refactor, or low-value edge-case accumulation receives critical-path priority while an x402 ship-path milestone can advance.
 
-Exception: a defect or fatal flaw exposed by an executed ship-path/security test immediately becomes critical-path work.
-
-## External / Human Gates
-
-The following may remain BLOCKED/DEFERRED while independent work continues:
-
-- provider credentials/accounts requiring Principal setup;
-- external Base Sepolia buyer execution until release candidate is ready;
-- Base mainnet transition;
-- final Gate 8 production authorization.
-
-Never mark these PASSED without evidence.
+Any security, correctness, tenant-isolation, payment-integrity, or runtime-identity defect exposed by an executed ship-path test immediately becomes critical-path work.
 
 ## Recovery Rule
 
-The repository carries the build. New agents/operators must recover from the live branch, `.build-state.json`, this handoff, the session recovery protocol, governing docs, current commits, and validation evidence. Do not require prior-chat copy/paste when repository state is sufficient.
+The repository carries the build. On any new session:
+
+1. read RAPHAEL v1.6 governance;
+2. read `.build-state.json`;
+3. read this handoff;
+4. read `SESSION_RECOVERY_PROTOCOL.md`;
+5. read `RAPHAEL_MASTER_TREE_v1.6.md`;
+6. inspect live `x402-production` HEAD and newer commits;
+7. verify the most recent CI/runtime evidence before inheriting any Green state;
+8. resume the exact next package without reopening completed work absent evidence of a gap.
