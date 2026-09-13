@@ -1,6 +1,7 @@
 import pytest
 
 from source_adapters import (
+    _auth_header,
     _git_env,
     build_clone_url,
     normalize_provider_key,
@@ -82,8 +83,21 @@ def test_self_hosted_private_ip_is_rejected_even_when_enabled(monkeypatch):
 
 
 def test_git_auth_header_is_scoped_to_repository_host(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_PUBLIC_PREVIEW_ONLY", "0")
     monkeypatch.setenv("REPOGUARD_GITLAB_TOKEN", "test-token")
     env = _git_env("gitlab", "https://gitlab.com/acme/widget.git")
     assert env["GIT_CONFIG_KEY_0"] == "http.https://gitlab.com/.extraHeader"
     assert env["GIT_CONFIG_KEY_1"] == "http.followRedirects"
     assert env["GIT_CONFIG_VALUE_1"] == "false"
+
+
+def test_public_preview_does_not_attach_optional_provider_credentials(monkeypatch):
+    monkeypatch.delenv("REPOGUARD_PUBLIC_PREVIEW_ONLY", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "private-capable-token")
+    assert _auth_header("github") is None
+
+
+def test_optional_provider_credentials_return_after_preview_is_disabled(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_PUBLIC_PREVIEW_ONLY", "0")
+    monkeypatch.setenv("GITHUB_TOKEN", "private-capable-token")
+    assert _auth_header("github") is not None
