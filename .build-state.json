@@ -1,0 +1,62 @@
+{
+  "project": "RepoGuard x402 Production",
+  "canonical_repo": "raphaelbluai-private/RepoGuard-Buildathon-version-",
+  "active_branch": "x402-production",
+  "reconciled_through_sha": "7eb4646a07b1cabb6c09e9d79c46c7a5a5bf651b",
+  "validated_code_sha": "1fec8733234aa07cdc5da82ebaad5f2a1da8c986",
+  "validation_run": "GitHub Actions 34777506621",
+  "build_mode": "RAPHAEL_v1.6_continuous_completion",
+  "mission_weight": "Critical",
+  "status_summary": "G0 canonical reconciliation is substantially complete and G1 launch-scope security hardening is active. SSRF/provider-host restrictions, credential host scoping, public-preview credential suppression, legacy route blocking, hardened CORS, request-size limits, concurrent scan limits, and non-root container execution are implemented. Backend regression, frontend build, and production-container build passed on validated code SHA 1fec8733234aa07cdc5da82ebaad5f2a1da8c986. Hostile staging, branch protection/release controls, repository visibility/IP disposition, image/dependency security review, live Sepolia acceptance, external-agent acceptance, and v1.6 Production Realization evidence remain open.",
+  "last_completed_work_package": "G0 canonical reconciliation artifacts + first G1 security hardening batches",
+  "next_work_package": "Continue G1: security headers, hostile staging tests, secret/dependency/container review, platform/release controls; then G2 x402 contract and idempotency reconciliation",
+  "runtime_validation_status": "ENGINEERING CI GREEN on validated code SHA 1fec8733234aa07cdc5da82ebaad5f2a1da8c986; production runtime and hostile staging verification still pending for current hardened release candidate",
+  "security_controls_green_in_code": [
+    "HTTPS-only caller-supplied clone URLs",
+    "Hosted provider/hostname binding",
+    "Embedded clone URL credentials rejected",
+    "Private/loopback/link-local/reserved destination blocking",
+    "DNS destination validation before outbound Git",
+    "Credential-bearing Git redirects disabled",
+    "Provider auth headers scoped to intended HTTPS host",
+    "Self-hosted provider URLs disabled by default",
+    "Public-preview mode enabled by default",
+    "Auth-required providers blocked from public preview",
+    "Optional provider credentials suppressed in public preview",
+    "Legacy/demo/free scan routes blocked in hardened production composition",
+    "Wildcard CORS removed from hardened commerce surface",
+    "Request body and field size bounds",
+    "Bounded concurrent scan capacity",
+    "Production container runs as non-root user"
+  ],
+  "open_launch_gates": [
+    "Hostile staging/adversarial acceptance",
+    "Dependency/container vulnerability review",
+    "Production security headers verification",
+    "Platform/edge abuse protection verification",
+    "x402-production branch protection",
+    "Repository visibility/proprietary source disposition",
+    "Exact release/deployment identity reconciliation",
+    "Live Base Sepolia external buyer settlement and cache evidence",
+    "External autonomous-agent purchase",
+    "RAPHAEL v1.6 Gates 1-7 evidence package",
+    "Gate 8 Principal launch authorization"
+  ],
+  "deferred_gates": [
+    "Authenticated private-repository provider launch until tenant authorization/isolation is implemented",
+    "AWS CodeCommit/Google/private provider credentials until outside public-preview scope",
+    "Base mainnet authorization",
+    "Gate 8 Principal production authorization"
+  ],
+  "governing_documents": [
+    "docs/governance/RAPHAEL_MASTER_SPEC_v1.6_GOVERNANCE.md",
+    "docs/governance/RAPHAEL_SECURITY_GOVERNANCE_PROTOCOL.md",
+    "docs/REPO_GUARD_CONTINUOUS_COMPLETION_BUILD_TASK.md",
+    "docs/mission-assurance/RG-V16-G0-RECONCILIATION.md",
+    "docs/RAPHAEL_MASTER_TREE_v1.6.md",
+    "docs/BUILD_HANDOFF.md",
+    "docs/SESSION_RECOVERY_PROTOCOL.md"
+  ],
+  "handoff_updated_at": "2026-09-13T19:25:00Z",
+  "handoff_updated_by": "ChatGPT / authorized build assistant"
+}
