@@ -66,30 +66,43 @@ def _apply_hardened_cors(request: Request, response):
     return response
 
 
+def _apply_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 @app.middleware("http")
 async def launch_security_boundary(request: Request, call_next):
     if is_legacy_route_blocked(request.url.path):
-        return JSONResponse(
+        return _apply_security_headers(JSONResponse(
             status_code=410,
             content={
                 "error": "LEGACY_ROUTE_DISABLED",
                 "message": "This legacy/demo route is disabled on the hardened commerce service.",
             },
-        )
+        ))
 
     content_length = request.headers.get("content-length")
     if content_length:
         try:
             if int(content_length) > MAX_REQUEST_BYTES:
-                return JSONResponse(
+                return _apply_security_headers(JSONResponse(
                     status_code=413,
                     content={"error": "REQUEST_TOO_LARGE", "max_bytes": MAX_REQUEST_BYTES},
-                )
+                ))
         except ValueError:
-            return JSONResponse(status_code=400, content={"error": "INVALID_CONTENT_LENGTH"})
+            return _apply_security_headers(JSONResponse(
+                status_code=400,
+                content={"error": "INVALID_CONTENT_LENGTH"},
+            ))
 
     response = await call_next(request)
-    return _apply_hardened_cors(request, response)
+    response = _apply_hardened_cors(request, response)
+    return _apply_security_headers(response)
 
 
 @app.get("/v1/health", include_in_schema=False)
