@@ -1,3 +1,5 @@
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import commerce_app_v2
@@ -79,3 +81,12 @@ def test_scan_concurrency_gate_fails_closed_when_capacity_is_exhausted():
     gate.release()
     assert gate.try_acquire() is True
     gate.release()
+
+
+def test_commerce_scan_rejects_when_concurrency_capacity_is_exhausted(monkeypatch):
+    monkeypatch.setattr(commerce_app_v2.SCAN_CONCURRENCY_GATE, "try_acquire", lambda: False)
+    body = commerce_app_v2.RepoRequest(repo="owner/repo", provider="github")
+    with pytest.raises(HTTPException) as exc:
+        commerce_app_v2._run_canonical_scan(body, "repo_scan")
+    assert exc.value.status_code == 503
+    assert exc.value.detail["error"] == "SCAN_CAPACITY_EXHAUSTED"
