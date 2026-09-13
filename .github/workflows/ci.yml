@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   frontend:
-    name: Frontend — Type Check & Build
+    name: Frontend — Type Check, Audit & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,13 +24,15 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Audit production and development dependencies
+        run: pnpm audit --audit-level high
       - name: Type check
         run: pnpm typecheck
       - name: Build
         run: pnpm build
 
   backend:
-    name: Backend — Regression, Contract, x402 & Discovery Gate
+    name: Backend — Security, Regression, Contract & x402 Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +40,11 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --frozen
+      - name: Export locked production dependencies
+        run: uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file /tmp/repoguard-production-requirements.txt
+      - name: Audit locked Python dependencies
+        run: uvx pip-audit==2.10.1 -r /tmp/repoguard-production-requirements.txt --no-deps
       - name: Compile production modules
         run: >-
           uv run python -m py_compile
@@ -75,7 +81,7 @@ jobs:
           backend/provenance.py
           backend/x402_payments.py
           backend/commerce_telemetry.py
-      - name: Run scanner, API, x402, discovery and telemetry suite
+      - name: Run scanner, API, x402, discovery, telemetry and security suite
         working-directory: backend
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
