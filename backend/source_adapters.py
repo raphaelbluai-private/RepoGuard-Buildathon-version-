@@ -94,6 +94,12 @@ def adapter_version(provider: str) -> str:
     return str(_PROVIDER_CAPABILITIES[key]["adapter_version"])
 
 
+def _public_preview_only() -> bool:
+    return os.getenv("REPOGUARD_PUBLIC_PREVIEW_ONLY", "1").strip().lower() not in {
+        "0", "false", "no", "off"
+    }
+
+
 def _strip_git_suffix(value: str) -> str:
     return value[:-4] if value.endswith(".git") else value
 
@@ -246,6 +252,9 @@ def _basic_header(username: str, password: str) -> str:
 
 def _auth_header(provider: str) -> str | None:
     key = normalize_provider_key(provider)
+    capability = _PROVIDER_CAPABILITIES.get(key) or {}
+    if _public_preview_only() and capability.get("auth_optional"):
+        return None
     if key == "github":
         token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN") or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
         return _basic_header("x-access-token", token) if token else None
