@@ -7,7 +7,7 @@ Work branch: `codex/x402-security-hardening-gate`
 
 ## Decision
 
-Security implementation gates are **CONTROLLED EVIDENCE PENDING** until the pushed commit completes GitHub CI. Gate 8 is **NOT AUTHORIZED**. No deployment, real payment, mainnet enablement, production-data change, branch deletion, force push, or merge was performed.
+Security implementation gates are **PASS** on GitHub Actions run 235 for remote commit `b0ea04748591fbc4749b8d068839c515c6478641`. Gate 8 is **NOT AUTHORIZED**. No deployment, real payment, mainnet enablement, production-data change, branch deletion, force push, or merge was performed.
 
 ## Implemented controls
 
@@ -31,12 +31,11 @@ Verified in the hardening workspace:
 - Current-tree and full-history filename-only pattern checks for private-key blocks and AWS access-key identifiers: zero matching files.
 - Canonical governance copy SHA-256: `27fc46c54960744f0e5ae9c5fd965985b818876ca9566598e6cb60e5a4f1e179`, identical to the supplied source.
 - `pip-audit` and `pnpm audit --audit-level high`: PASS; no known vulnerabilities found after dependency remediation.
-- Docker build: CONTROLLED EVIDENCE PENDING; no Docker daemon was available locally.
+- Production Docker image build: PASS in GitHub Actions run 235 (no Docker daemon was available locally).
 
 ## External evidence still required
 
-- GitHub CI status for the final pushed commit.
-- Docker image build result and immutable image digest (no local Docker daemon available during hardening).
+- Immutable release image digest (CI validates the build but does not publish or deploy it).
 - Repository visibility/private-access confirmation and branch protection/ruleset evidence from an authorized GitHub administrator.
 - Live Base Sepolia payment challenge, settlement, replay/idempotency, and reconciliation evidence using approved test funds.
 - Deployed runtime identity, egress control, managed rate limit, retention, alerting, backup/restore, and incident drill evidence.
