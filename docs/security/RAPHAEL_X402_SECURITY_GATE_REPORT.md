@@ -27,10 +27,10 @@ Verified in the hardening workspace:
 - `PYTHONPATH=. uv run pytest -q tests`: PASS, 140 tests.
 - `uv run ruff check --select E4,E7,E9,F ...`: PASS.
 - `CI=1 corepack pnpm@9.15.9 install --frozen-lockfile`: PASS.
-- pnpm 9 TypeScript check and Vite production build: PASS; 1,740 modules transformed.
+- pnpm 9 TypeScript check and Vite production build: PASS; 1,727 modules transformed.
 - Current-tree and full-history filename-only pattern checks for private-key blocks and AWS access-key identifiers: zero matching files.
 - Canonical governance copy SHA-256: `27fc46c54960744f0e5ae9c5fd965985b818876ca9566598e6cb60e5a4f1e179`, identical to the supplied source.
-- `pip-audit` and `pnpm audit`: CONTROLLED EVIDENCE PENDING; the local advisory-network request was unavailable, and CI owns the authoritative audit attempt.
+- `pip-audit` and `pnpm audit --audit-level high`: PASS; no known vulnerabilities found after dependency remediation.
 - Docker build: CONTROLLED EVIDENCE PENDING; no Docker daemon was available locally.
 
 ## External evidence still required
