@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 from x402.extensions.bazaar import OutputConfig, declare_discovery_extension
@@ -27,6 +28,7 @@ PROTECTED_ROUTE = "POST /v1/scan"
 SERVICE_NAME = "RepoGuard"
 SERVICE_TAGS = ["security", "github", "devtools", "repository"]
 _EVM_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+_FACILITATOR_HOSTS = {"x402.org", "api.cdp.coinbase.com"}
 
 DISCOVERY_EXTENSION = declare_discovery_extension(
     input={"repo": "owner/repository"},
@@ -69,6 +71,38 @@ def x402_enabled() -> bool:
     return _env_bool("REPOGUARD_X402_ENABLED", False)
 
 
+def validate_facilitator_url(value: str) -> str:
+    parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or parsed.query
+        or parsed.port not in (None, 443)
+        or hostname not in _FACILITATOR_HOSTS
+    ):
+        raise RuntimeError("x402 facilitator must be an approved HTTPS endpoint.")
+    return value.rstrip("/")
+
+
+def validate_payment_boundary(
+    *, pay_to: str, network: str, facilitator_url: str, allow_mainnet: bool
+) -> dict[str, str]:
+    if not _EVM_ADDRESS_RE.fullmatch(pay_to):
+        raise RuntimeError("x402 pay-to value must be a valid 0x-prefixed EVM address.")
+    if network not in {BASE_SEPOLIA, BASE_MAINNET}:
+        raise RuntimeError("RepoGuard permits Base Sepolia or Base only.")
+    facilitator_url = validate_facilitator_url(facilitator_url)
+    if network == BASE_MAINNET:
+        if not allow_mainnet:
+            raise RuntimeError("Base mainnet is blocked until explicit release authority is recorded.")
+        if facilitator_url == TESTNET_FACILITATOR:
+            raise RuntimeError("The x402.org facilitator is testnet-only.")
+    return {"pay_to": pay_to, "network": network, "facilitator_url": facilitator_url}
+
+
 def _validate_configuration() -> dict[str, str]:
     pay_to = os.environ.get("REPOGUARD_X402_PAY_TO", "").strip()
     network = os.environ.get("REPOGUARD_X402_NETWORK", BASE_SEPOLIA).strip()
@@ -77,35 +111,19 @@ def _validate_configuration() -> dict[str, str]:
         "REPOGUARD_X402_FACILITATOR_URL", TESTNET_FACILITATOR
     ).strip()
 
-    if not _EVM_ADDRESS_RE.fullmatch(pay_to):
-        raise RuntimeError(
-            "REPOGUARD_X402_PAY_TO must be a valid 0x-prefixed EVM address "
-            "before x402 can be enabled."
-        )
-    if network not in {BASE_SEPOLIA, BASE_MAINNET}:
-        raise RuntimeError("RepoGuard Sprint 001 permits Base Sepolia or Base only.")
+    boundary = validate_payment_boundary(
+        pay_to=pay_to,
+        network=network,
+        facilitator_url=facilitator_url,
+        allow_mainnet=_env_bool("REPOGUARD_X402_ALLOW_MAINNET", False),
+    )
     if not re.fullmatch(r"\$\d+(?:\.\d{1,6})?", price):
         raise RuntimeError("REPOGUARD_X402_PRICE must be a dollar price such as $0.01.")
-    if not facilitator_url.startswith("https://"):
-        raise RuntimeError("x402 facilitator URL must use HTTPS.")
-
-    if network == BASE_MAINNET:
-        if not _env_bool("REPOGUARD_X402_ALLOW_MAINNET", False):
-            raise RuntimeError(
-                "Base mainnet is blocked until REPOGUARD_X402_ALLOW_MAINNET=1 "
-                "after the Base Sepolia payment gate passes."
-            )
-        if facilitator_url == TESTNET_FACILITATOR:
-            raise RuntimeError(
-                "x402.org facilitator is testnet-only; configure the CDP facilitator "
-                "before enabling Base mainnet."
-            )
-
     return {
-        "pay_to": pay_to,
-        "network": network,
+        "pay_to": boundary["pay_to"],
+        "network": boundary["network"],
         "price": price,
-        "facilitator_url": facilitator_url,
+        "facilitator_url": boundary["facilitator_url"],
     }
 
 
