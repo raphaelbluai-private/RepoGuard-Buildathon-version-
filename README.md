@@ -6,7 +6,8 @@ RepoGuard is a deterministic pre-deployment assurance service for public source 
 
 - Production development branch: `x402-production`
 - Security hardening branch: `codex/x402-security-hardening-gate`
-- Hardening base: `62f1ee093749ebc9c3754c8eded556ff1c8419db`
+- Original hardening baseline: `62f1ee093749ebc9c3754c8eded556ff1c8419db`
+- Reconciled review base: `976fb3d0fae2215feff5c4b20c7afb5d029769ad`
 - Legacy branches (`demo`, `main`, and buildathon branches) are history/reference only and are not release sources.
 - Gate 8 launch authority: **NOT AUTHORIZED**. Mainnet and deployment require a separate human decision.
 

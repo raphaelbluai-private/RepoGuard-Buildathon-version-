@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Base all work on `x402-production` at `62f1ee0`; do not use `demo` or `main` as the implementation base.
+- Original work began on `x402-production` at `62f1ee0`; the completed change was reconciled onto `976fb3d` before review. Do not use `demo` or `main` as the implementation base.
 - Public preview scans public repositories only; service-level credentials cannot be used for caller-selected private resources.
 - HTTPS only; reject URL credentials, fragments, unsafe ports, provider/hostname mismatch, loopback/private/link-local/multicast/reserved destinations, and unapproved self-hosted providers.
 - Keep Base mainnet disabled and do not perform a real payment or deployment without Principal approval.

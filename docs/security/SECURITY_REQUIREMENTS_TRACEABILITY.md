@@ -1,6 +1,8 @@
 # RepoGuard x402 Security Requirements Traceability
 
-Baseline: `x402-production` at `62f1ee093749ebc9c3754c8eded556ff1c8419db`. Gate 8 remains **NOT AUTHORIZED**.
+Original baseline: `x402-production` at `62f1ee093749ebc9c3754c8eded556ff1c8419db`.
+Reconciled review base: `x402-production` at `976fb3d0fae2215feff5c4b20c7afb5d029769ad`.
+Gate 8 remains **NOT AUTHORIZED**.
 
 | Requirement | Control | Regression evidence | RAPHAEL state |
 |---|---|---|---|
