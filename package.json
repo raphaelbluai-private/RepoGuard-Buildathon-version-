@@ -2,6 +2,7 @@
   "name": "repoguard-workspace",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "pnpm --filter @workspace/repoguard run dev",
     "build": "pnpm --filter @workspace/repoguard run build",

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-
-import app as legacy
-from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
+import scan_cache
+from commerce_contracts import (
+    provider_capabilities,
+    remediation_view,
+    safe_to_ship_view,
+)
 from commerce_telemetry import record_event
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from launch_security import (
     ScanConcurrencyGate,
     cors_origins,
@@ -19,20 +23,22 @@ from launch_security import (
     provider_allowed_in_launch,
 )
 from product_catalog import PRODUCTS, discovery_catalog, get_product
+from production_surface import ProductionSurfaceMiddleware
 from provenance import build_attestation, build_provenance
 from provider_scanner import scan_repo_provider
-from source_adapters import credentials_configured, normalize_provider_key, repo_head_identity
-
+from pydantic import BaseModel, Field
+from security_middleware import install_security_middleware
+from source_adapters import normalize_provider_key, repo_head_identity
 from x402.http import FacilitatorConfig, HTTPFacilitatorClient, PaymentOption
 from x402.http.middleware.fastapi import PaymentMiddlewareASGI
 from x402.http.types import RouteConfig
 from x402.mechanisms.evm.exact import ExactEvmServerScheme
 from x402.server import x402ResourceServer
-
+from x402_payments import validate_payment_boundary
 
 app = FastAPI(title="RepoGuard Agent Commerce API", version="2.2.0")
 
-X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NETWORK", "eip155:84532"))
+X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", "eip155:84532")
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
 MAX_REQUEST_BYTES = int(os.environ.get("REPOGUARD_MAX_REQUEST_BYTES", "65536"))
@@ -124,7 +130,7 @@ class RepoRequest(BaseModel):
 
 
 class VerifyCommitRequest(RepoRequest):
-    expected_commit_sha: str = Field(min_length=7, max_length=128)
+    expected_commit_sha: str = Field(min_length=1, max_length=128)
 
 
 def _provider_key(provider: str) -> str:
@@ -147,6 +153,15 @@ def _require_active_provider(provider: str) -> str:
                 "error": "PROVIDER_ADAPTER_NOT_ACTIVE",
                 "provider": key,
                 "status": provider_info.get("status"),
+            },
+        )
+    if provider_info.get("auth_required"):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "PUBLIC_REPOSITORY_REQUIRED",
+                "provider": key,
+                "message": "The public commerce API does not use service credentials or scan private repositories.",
             },
         )
     if not provider_allowed_in_launch(provider_info):
@@ -193,7 +208,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     started = time.monotonic()
     repo_key, head_sha, identity_url = _identity(provider, body.repo)
 
-    cached = legacy._cache_get(repo_key, head_sha) if head_sha else None
+    cached = scan_cache.get(repo_key, head_sha) if head_sha else None
     cache_hit = cached is not None
 
     if cache_hit:
@@ -201,7 +216,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     else:
         try:
             result = scan_repo_provider(provider, body.repo)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - scanner failures become stable API results
             result = {
                 "ok": False,
                 "error": "SCAN_ERROR",
@@ -209,7 +224,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
                 "message": f"Scan failed unexpectedly: {type(exc).__name__}",
             }
         if head_sha and isinstance(result, dict) and result.get("ok"):
-            legacy._cache_put(repo_key, head_sha, result)
+            scan_cache.put(repo_key, head_sha, result)
 
     if not isinstance(result, dict):
         result = {"ok": False, "error": "INVALID_SCAN_RESULT", "provider": provider}
@@ -287,6 +302,19 @@ def preflight(body: RepoRequest):
             "products": discovery_catalog(),
         }
 
+    if provider_info.get("auth_required"):
+        return {
+            "provider": provider,
+            "supported": True,
+            "adapter_status": "active",
+            "error": "PUBLIC_REPOSITORY_REQUIRED",
+            "credentials_required": True,
+            "credentials_configured": False,
+            "scan_available": False,
+            "provider_info": provider_info,
+            "products": discovery_catalog(),
+        }
+
     if not provider_allowed_in_launch(provider_info):
         return {
             "provider": provider,
@@ -295,18 +323,6 @@ def preflight(body: RepoRequest):
             "scan_available": False,
             "error": "PUBLIC_PREVIEW_ONLY",
             "message": "This provider requires authenticated/private access and is disabled for the current launch scope.",
-            "provider_info": provider_info,
-            "products": discovery_catalog(),
-        }
-
-    if provider_info.get("auth_required") and not credentials_configured(provider):
-        return {
-            "provider": provider,
-            "supported": True,
-            "adapter_status": "active",
-            "credentials_required": True,
-            "credentials_configured": False,
-            "scan_available": False,
             "provider_info": provider_info,
             "products": discovery_catalog(),
         }
@@ -400,7 +416,7 @@ def repo_scan(body: RepoRequest):
         "cache": {
             "hit": scan["cache_hit"],
             "repoHeadSha": scan["head_sha"],
-            "ttlSeconds": legacy._CACHE_TTL_SECONDS,
+            "ttlSeconds": scan_cache.CACHE_TTL_SECONDS,
         },
         "provenance": scan["provenance"],
         "result": scan["result"],
@@ -433,7 +449,16 @@ def attest_scan(body: RepoRequest):
 
 
 if X402_PAY_TO:
-    facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=X402_FACILITATOR_URL))
+    payment_boundary = validate_payment_boundary(
+        pay_to=X402_PAY_TO,
+        network=X402_NETWORK,
+        facilitator_url=X402_FACILITATOR_URL,
+        allow_mainnet=os.environ.get("REPOGUARD_X402_ALLOW_MAINNET", "").lower()
+        in {"1", "true", "yes", "on"},
+    )
+    facilitator = HTTPFacilitatorClient(
+        FacilitatorConfig(url=payment_boundary["facilitator_url"])
+    )
     x402_server = x402ResourceServer(facilitator)
     x402_server.register(X402_NETWORK, ExactEvmServerScheme())
 
@@ -457,4 +482,33 @@ if X402_PAY_TO:
     app.add_middleware(PaymentMiddlewareASGI, routes=paid_routes, server=x402_server)
 
 
-app.mount("/", legacy.app)
+install_security_middleware(app)
+app.add_middleware(ProductionSurfaceMiddleware)
+
+
+_DIST = (
+    Path(__file__).resolve().parent.parent / "artifacts" / "repoguard" / "dist" / "public"
+).resolve()
+_INDEX = _DIST / "index.html"
+
+if _DIST.is_dir() and _INDEX.is_file():
+    _ASSETS = _DIST / "assets"
+    if _ASSETS.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS)), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def _spa_root():
+        return FileResponse(str(_INDEX))
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa_fallback(full_path: str):
+        if full_path == "api" or full_path.startswith(("api/", "v1/")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        try:
+            candidate = (_DIST / full_path).resolve()
+            candidate.relative_to(_DIST)
+        except (ValueError, OSError):
+            raise HTTPException(status_code=404, detail="Not Found")
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        return FileResponse(str(_INDEX))

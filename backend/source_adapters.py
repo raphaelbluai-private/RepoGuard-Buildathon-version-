@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from network_policy import validate_repository_destination
+
 
 @dataclass(frozen=True)
 class RepositoryRef:
@@ -101,7 +103,7 @@ def _public_preview_only() -> bool:
 
 
 def _strip_git_suffix(value: str) -> str:
-    return value[:-4] if value.endswith(".git") else value
+    return value.removesuffix(".git")
 
 
 def _id_from_url(url: str) -> str:
@@ -294,25 +296,49 @@ def credentials_configured(provider: str) -> bool:
     return not caps.get("auth_required") or _auth_header(key) is not None
 
 
-def _git_env(provider: str, clone_url: str | None = None) -> dict[str, str]:
+def _git_env(
+    provider: str,
+    clone_url: str | None = None,
+    *,
+    include_credentials: bool = True,
+) -> dict[str, str]:
     env = dict(os.environ)
+    for key in tuple(env):
+        upper = key.upper()
+        provider_secret = upper in {
+            "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITLAB_TOKEN",
+        }
+        repoguard_secret = upper.startswith("REPOGUARD_") and any(
+            marker in upper
+            for marker in ("TOKEN", "PASSWORD", "SECRET", "PAT", "APP_PASSWORD")
+        )
+        if provider_secret or repoguard_secret:
+            env.pop(key, None)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_CONFIG_NOSYSTEM"] = "1"
-    header = _auth_header(provider)
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    env["GIT_ASKPASS"] = os.devnull
     configs: list[tuple[str, str]] = []
-    if header and clone_url:
-        parsed = urlparse(clone_url)
-        host = parsed.hostname
-        if not host:
+    header = _auth_header(provider) if include_credentials and clone_url else None
+    if header:
+        hostname = (urlparse(clone_url).hostname or "").lower().rstrip(".")
+        if not hostname:
             raise ValueError("Repository URL must contain a hostname")
-        configs.append((f"http.https://{host}/.extraHeader", header))
-    if clone_url:
-        configs.append(("http.followRedirects", "false"))
-    if configs:
-        env["GIT_CONFIG_COUNT"] = str(len(configs))
-        for index, (key, value) in enumerate(configs):
-            env[f"GIT_CONFIG_KEY_{index}"] = key
-            env[f"GIT_CONFIG_VALUE_{index}"] = value
+        configs.append((f"http.https://{hostname}/.extraHeader", header))
+    configs.extend(
+        [
+            ("http.followRedirects", "false"),
+            ("credential.helper", ""),
+        ]
+    )
+    env["GIT_CONFIG_COUNT"] = str(len(configs))
+    for index, (config_key, value) in enumerate(configs):
+        env[f"GIT_CONFIG_KEY_{index}"] = config_key
+        env[f"GIT_CONFIG_VALUE_{index}"] = value
     return env
 
 
@@ -323,20 +349,21 @@ def _run_git(
     cwd: str | None = None,
     text: bool = True,
     clone_url: str | None = None,
+    *,
+    include_credentials: bool = False,
 ):
     if clone_url:
-        parsed = urlparse(clone_url)
-        host = parsed.hostname
-        if not host:
-            raise ValueError("Repository URL must contain a hostname")
-        _validate_destination_ips(host)
+        validate_repository_destination(provider, clone_url)
     try:
         return subprocess.run(
             ["git", *args],
             cwd=cwd,
-            env=_git_env(provider, clone_url),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            env=_git_env(
+                provider,
+                clone_url,
+                include_credentials=include_credentials,
+            ),
+            capture_output=True,
             timeout=timeout,
             check=False,
             text=text,
@@ -349,11 +376,12 @@ def _run_git(
 
 def repo_head_identity(provider: str, repo_input: str) -> tuple[str, str | None, str]:
     ref = build_clone_url(provider, repo_input)
+    destination = validate_repository_destination(ref.provider, ref.clone_url)
     proc = _run_git(
-        ["ls-remote", ref.clone_url, "HEAD"],
+        ["ls-remote", destination.url, "HEAD"],
         ref.provider,
         timeout=15,
-        clone_url=ref.clone_url,
+        clone_url=destination.url,
     )
     if proc.returncode != 0:
         return f"{ref.provider}:{ref.repository_id}", None, ref.repository_url
@@ -382,24 +410,25 @@ def _git_show(repo_dir: str, provider: str, path: str, max_bytes: int = 1_000_00
 def fetch_snapshot(provider: str, repo_input: str, core_files: list[str]) -> dict[str, Any]:
     ref = build_clone_url(provider, repo_input)
     capability = _PROVIDER_CAPABILITIES[ref.provider]
-    if capability.get("auth_required") and not _auth_header(ref.provider):
+    if capability.get("auth_required"):
         return {
             "ok": False,
             "error": "PROVIDER_AUTH_REQUIRED",
             "provider": ref.provider,
             "repository": ref.repository_id,
             "repository_url": ref.repository_url,
-            "message": f"{ref.provider} adapter is active but this repository host requires configured credentials.",
+            "message": f"{ref.provider} requires authenticated access and is unavailable in public-only scan mode.",
         }
+    destination = validate_repository_destination(ref.provider, ref.clone_url)
 
     with tempfile.TemporaryDirectory(prefix="repoguard-") as tmp:
         repo_dir = str(Path(tmp) / "repo")
         try:
             clone = _run_git(
-                ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", ref.clone_url, repo_dir],
+                ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", destination.url, repo_dir],
                 ref.provider,
                 timeout=30,
-                clone_url=ref.clone_url,
+                clone_url=destination.url,
             )
         except ValueError as exc:
             return {

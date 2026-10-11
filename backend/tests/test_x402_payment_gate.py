@@ -53,6 +53,27 @@ os.environ["REPOGUARD_X402_NETWORK"] = "eip155:84532"
 os.environ["REPOGUARD_X402_PRICE"] = "$0.01"
 os.environ["REPOGUARD_X402_FACILITATOR_URL"] = "https://x402.org/facilitator"
 os.environ["REPOGUARD_INTERNAL"] = "1"
+import x402_payments
+from x402.schemas.responses import SupportedResponse
+class OfflineFacilitator:
+    def __init__(self, config):
+        self.config = config
+    def get_supported(self):
+        return SupportedResponse.model_validate({{
+            "kinds": [{{
+                "x402Version": 2,
+                "scheme": "exact",
+                "network": "eip155:84532",
+                "extra": {{}},
+            }}],
+            "extensions": [],
+            "signers": {{}},
+        }})
+    async def verify(self, payload, requirements):
+        raise AssertionError("Malformed payment must fail before facilitator verification")
+    async def settle(self, payload, requirements):
+        raise AssertionError("Test must never settle a payment")
+x402_payments.HTTPFacilitatorClient = OfflineFacilitator
 from fastapi.testclient import TestClient
 import commercial_app
 client = TestClient(commercial_app.app)
@@ -65,6 +86,9 @@ print(json.dumps({{
 }}))
 '''
     env = os.environ.copy()
+    for key in tuple(env):
+        if "PROXY" in key.upper():
+            env.pop(key, None)
     env["PYTHONPATH"] = os.getcwd()
     proc = subprocess.run(
         [sys.executable, "-c", script],

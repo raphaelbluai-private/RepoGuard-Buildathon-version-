@@ -100,3 +100,10 @@ def v1_scan(body: ScanBody, request: Request):
 # installed last so it observes the final 402/settlement response emitted by x402.
 _X402_STATE = configure_x402(app)
 app.add_middleware(CommerceTelemetryMiddleware)
+
+# app.py registers its SPA wildcard while it is imported. Keep that wildcard
+# last after this compatibility composition adds its machine routes.
+for _route in tuple(app.router.routes):
+    if getattr(_route, "name", None) == "_spa_fallback":
+        app.router.routes.remove(_route)
+        app.router.routes.append(_route)
