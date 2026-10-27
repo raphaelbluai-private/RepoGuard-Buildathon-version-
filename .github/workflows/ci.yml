@@ -74,7 +74,9 @@ jobs:
           backend/runtime_identity.py
           backend/operational_alerts.py
           backend/performance_budgets.py
+          backend/release_assurance.py
           backend/operational_readiness.py
+          backend/release_assurance.py
       - name: Lint correctness-critical rules
         run: >-
           uv run ruff check --select E4,E7,E9,F
@@ -213,6 +215,11 @@ jobs:
         run: uv run python scripts/generate_release_evidence.py
       - name: Generate release readiness evidence
         run: uv run python scripts/generate_release_readiness.py
+      - name: Generate branch/repository release assurance evidence
+        env:
+          REPOGUARD_RELEASE_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          REPOGUARD_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: uv run python scripts/generate_release_assurance.py
       - name: Generate machine-readable dependency inventories
         run: |
           uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file build/release-evidence/python-production-requirements.txt
@@ -231,6 +238,10 @@ jobs:
           assert readiness["engineering_evidence_current"] is True
           assert readiness["release_authorized"] is False
           assert "live_base_sepolia_acceptance" in readiness["live_blockers"]
+          assurance = json.loads(Path("build/release-evidence/release-assurance.json").read_text())
+          assert assurance["branch"] == "x402-production"
+          assert assurance["source_sha"] == os.environ["GITHUB_SHA"]
+          assert assurance["release_authorized"] is False
           PY
       - name: Upload release evidence
         uses: actions/upload-artifact@v4
