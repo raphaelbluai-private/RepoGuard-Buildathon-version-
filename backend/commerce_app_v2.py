@@ -46,6 +46,8 @@ from payment_operations import (
     transition,
 )
 from launch_security import (
+    ProviderCircuitBreaker,
+    RequestRateLimiter,
     ScanConcurrencyGate,
     cors_origins,
     is_legacy_route_blocked,
@@ -78,7 +80,13 @@ X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
 X402_FACILITATOR_URL = os.environ.get("REPOGUARD_X402_FACILITATOR_URL", "https://x402.org/facilitator")
 MAX_REQUEST_BYTES = int(os.environ.get("REPOGUARD_MAX_REQUEST_BYTES", "65536"))
 MAX_CONCURRENT_SCANS = int(os.environ.get("REPOGUARD_MAX_CONCURRENT_SCANS", "4"))
+REQUEST_RATE_LIMIT = int(os.environ.get("REPOGUARD_REQUEST_RATE_LIMIT", "120"))
+REQUEST_RATE_WINDOW_SECONDS = int(os.environ.get("REPOGUARD_REQUEST_RATE_WINDOW_SECONDS", "60"))
+PROVIDER_FAILURE_THRESHOLD = int(os.environ.get("REPOGUARD_PROVIDER_FAILURE_THRESHOLD", "3"))
+PROVIDER_COOLDOWN_SECONDS = int(os.environ.get("REPOGUARD_PROVIDER_COOLDOWN_SECONDS", "30"))
 SCAN_CONCURRENCY_GATE = ScanConcurrencyGate(MAX_CONCURRENT_SCANS)
+REQUEST_RATE_LIMITER = RequestRateLimiter(REQUEST_RATE_LIMIT, REQUEST_RATE_WINDOW_SECONDS)
+PROVIDER_CIRCUIT_BREAKER = ProviderCircuitBreaker(PROVIDER_FAILURE_THRESHOLD, PROVIDER_COOLDOWN_SECONDS)
 
 _CORS_HEADERS = (
     "access-control-allow-origin",
@@ -141,6 +149,28 @@ async def launch_security_boundary(request: Request, call_next):
             return _apply_security_headers(JSONResponse(
                 status_code=400,
                 content={"error": "INVALID_CONTENT_LENGTH"},
+            ))
+
+    if request.method.upper() == "POST" and request.url.path.startswith("/v1/repoguard/"):
+        client_key = request.client.host if request.client else "unknown"
+        rate_key = f"{client_key}:{request.url.path}"
+        if not REQUEST_RATE_LIMITER.allow(rate_key):
+            retry_after = REQUEST_RATE_LIMITER.retry_after(rate_key)
+            emit_alert(
+                "REQUEST_RATE_LIMITED",
+                severity="WARNING",
+                component="api",
+                retryable=True,
+                detail={"path": request.url.path, "retry_after_seconds": retry_after},
+            )
+            return _apply_security_headers(JSONResponse(
+                status_code=429,
+                content={
+                    "error": "RATE_LIMITED",
+                    "message": "Request rate limit exceeded. Retry later.",
+                    "retry_after_seconds": retry_after,
+                },
+                headers={"Retry-After": str(retry_after)},
             ))
 
     response = await call_next(request)
@@ -426,13 +456,22 @@ def _require_active_provider(provider: str) -> str:
 
 
 def _identity(provider: str, repo: str) -> tuple[str, str | None, str]:
+    if not PROVIDER_CIRCUIT_BREAKER.allow_call(provider):
+        retry_after = PROVIDER_CIRCUIT_BREAKER.retry_after(provider)
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "PROVIDER_CIRCUIT_OPEN", "provider": provider},
+            headers={"Retry-After": str(retry_after)},
+        )
     try:
         return repo_head_identity(provider, repo)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"error": "INVALID_REPOSITORY", "message": str(exc)}) from exc
     except TimeoutError as exc:
+        PROVIDER_CIRCUIT_BREAKER.record_failure(provider)
         raise HTTPException(status_code=504, detail={"error": "PROVIDER_TIMEOUT", "provider": provider}) from exc
     except RuntimeError as exc:
+        PROVIDER_CIRCUIT_BREAKER.record_failure(provider)
         raise HTTPException(status_code=503, detail={"error": "ADAPTER_RUNTIME_ERROR", "message": str(exc)}) from exc
 
 
@@ -489,6 +528,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
         try:
             result = scan_repo_provider(provider, body.repo)
         except Exception as exc:
+            PROVIDER_CIRCUIT_BREAKER.record_failure(provider)
             raise HTTPException(
                 status_code=503,
                 detail={
@@ -505,6 +545,8 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail={"error": "INVALID_SCAN_RESULT", "provider": provider})
     if result.get("ok") is False:
         error_code = str(result.get("error") or "SCAN_FAILED")
+        if error_code in {"NETWORK_ERROR", "RATE_LIMIT", "GITHUB_ERROR", "PROVIDER_TIMEOUT", "SCAN_ERROR"}:
+            PROVIDER_CIRCUIT_BREAKER.record_failure(provider)
         retryable = error_code in {"NETWORK_ERROR", "RATE_LIMIT", "GITHUB_ERROR", "PROVIDER_TIMEOUT", "SCAN_ERROR"}
         raise HTTPException(
             status_code=503 if retryable else 422,
@@ -516,6 +558,8 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     repository = result_repo.get("fullName") or repo_key.split(":", 1)[-1] or body.repo
     repository_url = result_repo.get("url") or result.get("repository_url") or identity_url
     effective_sha = result.get("commitSha") or head_sha
+
+    PROVIDER_CIRCUIT_BREAKER.record_success(provider)
 
     provenance = build_provenance(
         provider=provider,
@@ -683,6 +727,7 @@ def verify_commit(body: VerifyCommitRequest, request: Request):
         provider = _require_active_provider(body.provider)
         repo_key, current_sha, repository_url = _identity(provider, body.repo)
         matched = bool(current_sha and current_sha == body.expected_commit_sha)
+        PROVIDER_CIRCUIT_BREAKER.record_success(provider)
         repository = repo_key.split(":", 1)[-1]
         payload = {
             "product": "verify_commit",
