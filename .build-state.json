@@ -2,15 +2,15 @@
   "project": "RepoGuard x402 Production",
   "canonical_repo": "raphaelbluai-private/RepoGuard-Buildathon-version-",
   "active_branch": "x402-production",
-  "reconciled_through_sha": "f2c819eb6df7b093b487a064ae6910711c52af15",
-  "validated_code_sha": "f2c819eb6df7b093b487a064ae6910711c52af15",
-  "validation_run": "GitHub Actions 40439106004 / CI #358",
+  "reconciled_through_sha": "3b47b345e73142db624001b2bb4d9230af56f3fe",
+  "validated_code_sha": "3b47b345e73142db624001b2bb4d9230af56f3fe",
+  "validation_run": "GitHub Actions 40441963199 / CI #403",
   "build_mode": "RAPHAEL_v1.6_continuous_completion",
   "mission_weight": "Critical",
-  "status_summary": "G2 Payment Operations engineering remains GREEN. G3-G4 Production Realization engineering is substantially GREEN on exact-head SHA f2c819eb6df7b093b487a064ae6910711c52af15 via CI #358: exact release manifest, container/source provenance, dependency-inventory SBOM-equivalent evidence, persistent cache/payment/telemetry restart proof, runtime identity/config hash, authorized-release drift rejection, operational readiness diagnostics, structured alerting with recursive secret redaction, operator/incident/rollback runbooks, performance budgets, evidence freshness ledger, release-readiness artifact, and CI run deduplication are verified. Railway deployment identity/volume restart, live alert delivery, live performance/load, container vulnerability review, platform edge abuse controls, live Base Sepolia, external-agent purchase, and Gate 8 remain open.",
-  "last_completed_work_package": "G3-G4 Production Realization engineering closure (internally verifiable scope)",
-  "next_work_package": "Next non-live closure candidates: container/image vulnerability review, hostile-staging security acceptance that does not require real payment settlement, branch/release assurance, and Gates 1-7 evidence packaging. Live Railway/payment/load/alert delivery evidence remains deferred.",
-  "runtime_validation_status": "ENGINEERING CI GREEN on exact head f2c819eb6df7b093b487a064ae6910711c52af15 via CI #358: frontend audit/typecheck/build PASS; Python audit/compile/lint PASS; 142 tests PASS; production container provenance PASS; exact-SHA release manifest PASS; dependency inventories PASS; machine-readable readiness evidence PASS.",
+  "status_summary": "G2 Payment Operations engineering remains GREEN. G3-G4 Production Realization remains substantially GREEN. The next non-live security/release package is now engineering GREEN on source SHA 3b47b345e73142db624001b2bb4d9230af56f3fe via CI #403: 158 backend tests PASS; dedicated hostile-staging acceptance PASS; malicious-host/private-metadata SSRF, redirect containment, credential transport suppression, oversized request, overload, secret redaction, and payment-proof replay simulation PASS; production runtime package-manager tooling removed; exact source-head identity used across all CI artifacts; production container actual-rootfs vulnerability gate PASS with no eligible HIGH/CRITICAL fixed findings; release evidence PASS. Branch protection/required checks, signed release governance, public-source disposition, Railway/runtime/edge/load/live-alert evidence, live Base Sepolia, facilitator evidence, external-agent purchase, Gates 1-7 package, and Gate 8 remain open.",
+  "last_completed_work_package": "Non-live hostile staging, container vulnerability assurance, and release-identity hardening",
+  "next_work_package": "Next non-live closure candidates: RAPHAEL Gates 1-7 evidence packaging; application/edge abuse policy work that can be tested without live payment settlement; release signing/attestation engineering if an approved signing mechanism is selected. External blockers remain branch protection/required-check administration, public-source disposition, Railway runtime evidence, live load/alerts, and all live payment acceptance.",
+  "runtime_validation_status": "ENGINEERING CI GREEN on exact source SHA 3b47b345e73142db624001b2bb4d9230af56f3fe via CI #403: frontend audit/typecheck/build PASS; Python audit/compile/lint PASS; 158 tests PASS; hostile-staging PASS; production runtime smoke PASS; actual-rootfs HIGH/CRITICAL vulnerability gate PASS; container provenance and release evidence PASS.",
   "security_controls_green_in_code": [
     "HTTPS-only caller-supplied clone URLs",
     "Hosted provider/hostname binding",
@@ -30,13 +30,13 @@
     "Production container runs as non-root user"
   ],
   "open_launch_gates": [
-    "Container/image vulnerability review",
-    "Hostile staging/adversarial acceptance",
     "Platform/edge abuse protection verification",
     "x402-production branch protection and required checks",
-    "Repository visibility/proprietary source disposition",
+    "Signed/verifiably attributable release process",
+    "Repository visibility/proprietary source disposition (repository currently public)",
     "Exact Railway deployment identity reconciliation",
     "Railway persistent-volume restart/redeploy verification",
+    "Deployed runtime privilege/resource verification",
     "Live structured-alert delivery sink verification",
     "Live performance/load results",
     "Live Base Sepolia external buyer settlement and cache evidence",
@@ -59,8 +59,9 @@
     "docs/mission-assurance/RG-V16-G0-RECONCILIATION.md",
     "docs/RAPHAEL_MASTER_TREE_v1.6.md",
     "docs/BUILD_HANDOFF.md",
-    "docs/SESSION_RECOVERY_PROTOCOL.md"
+    "docs/SESSION_RECOVERY_PROTOCOL.md",
+    "docs/mission-assurance/RG-HOSTILE-STAGING-SECURITY-ACCEPTANCE.md"
   ],
-  "handoff_updated_at": "2026-10-27T02:35:40Z",
+  "handoff_updated_at": "2026-10-27T03:05:30Z",
   "handoff_updated_by": "ChatGPT / authorized build assistant"
 }
