@@ -50,6 +50,7 @@ from launch_security import (
     provider_allowed_in_launch,
 )
 from product_catalog import PRODUCTS, discovery_catalog, get_product
+from persistent_scan_cache import get as persistent_cache_get, put as persistent_cache_put, stats as persistent_cache_stats
 from provenance import build_attestation, build_provenance
 from provider_scanner import scan_repo_provider
 from source_adapters import credentials_configured, normalize_provider_key, repo_head_identity
@@ -452,7 +453,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     started = time.monotonic()
     repo_key, head_sha, identity_url = _identity(provider, body.repo)
 
-    cached = legacy._cache_get(repo_key, head_sha) if head_sha else None
+    cached = persistent_cache_get(repo_key, head_sha) if head_sha else None
     cache_hit = cached is not None
 
     if cache_hit:
@@ -471,7 +472,7 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
                 headers={"Retry-After": "2"},
             ) from exc
         if head_sha and isinstance(result, dict) and result.get("ok"):
-            legacy._cache_put(repo_key, head_sha, result)
+            persistent_cache_put(repo_key, head_sha, result)
 
     if not isinstance(result, dict):
         raise HTTPException(status_code=502, detail={"error": "INVALID_SCAN_RESULT", "provider": provider})
@@ -691,7 +692,7 @@ def repo_scan(body: RepoRequest, request: Request):
         "cache": {
             "hit": scan["cache_hit"],
             "repoHeadSha": scan["head_sha"],
-            "ttlSeconds": legacy._CACHE_TTL_SECONDS,
+            "ttlSeconds": persistent_cache_stats()["ttl_seconds"],
         },
         "provenance": scan["provenance"],
         "result": scan["result"],
