@@ -68,3 +68,46 @@ def qualification_snapshot(url: str, network: str) -> dict:
             "incident_failover_runbook": True,
         },
     }
+
+
+def classify_facilitator_failure(phase: str, failure: str) -> dict:
+    """Return deterministic operator semantics for facilitator failures."""
+    normalized_phase = phase.strip().lower()
+    normalized_failure = failure.strip().lower()
+    if normalized_phase not in {"verify", "settle", "supported"}:
+        raise ValueError("Unknown facilitator phase.")
+
+    if normalized_phase == "settle" and "timeout" in normalized_failure:
+        return {
+            "retryable": False,
+            "reconciliation_required": True,
+            "state": "SETTLEMENT_PENDING",
+            "code": "SETTLEMENT_OUTCOME_UNKNOWN",
+        }
+    if normalized_phase == "verify" and "timeout" in normalized_failure:
+        return {
+            "retryable": True,
+            "reconciliation_required": False,
+            "state": "PRESENTED",
+            "code": "VERIFY_TIMEOUT",
+        }
+    if "5xx" in normalized_failure or "unavailable" in normalized_failure or "network" in normalized_failure:
+        return {
+            "retryable": normalized_phase != "settle",
+            "reconciliation_required": normalized_phase == "settle",
+            "state": "SETTLEMENT_PENDING" if normalized_phase == "settle" else "PRESENTED",
+            "code": "FACILITATOR_UNAVAILABLE",
+        }
+    if "malformed" in normalized_failure:
+        return {
+            "retryable": False,
+            "reconciliation_required": normalized_phase == "settle",
+            "state": "SETTLEMENT_PENDING" if normalized_phase == "settle" else "VERIFICATION_REJECTED",
+            "code": "FACILITATOR_PROTOCOL_ERROR",
+        }
+    return {
+        "retryable": False,
+        "reconciliation_required": normalized_phase == "settle",
+        "state": "SETTLEMENT_PENDING" if normalized_phase == "settle" else "VERIFICATION_REJECTED",
+        "code": "FACILITATOR_FAILURE",
+    }
