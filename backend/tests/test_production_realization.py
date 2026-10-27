@@ -59,12 +59,16 @@ record_event("restart_probe", status_code=200)
 import json
 from persistent_scan_cache import get
 from payment_operations import get_by_idempotency
-from commerce_telemetry import summary
+import sqlite3
 tx = get_by_idempotency("restart-idem")
+with sqlite3.connect(os.environ["REPOGUARD_TELEMETRY_DB"]) as conn:
+    telemetry_count = conn.execute(
+        "SELECT COUNT(*) FROM commerce_events WHERE event_type='restart_probe'"
+    ).fetchone()[0]
 print(json.dumps({
     "cache": get("github:owner/repo", "abc123"),
     "transaction_state": tx.state if tx else None,
-    "telemetry_db_exists": True,
+    "telemetry_count": telemetry_count,
 }))
 """,
         env,
@@ -75,6 +79,7 @@ print(json.dumps({
     assert cache_db.exists()
     assert payment_db.exists()
     assert telemetry_db.exists()
+    assert data["telemetry_count"] == 1
 
 
 def test_runtime_identity_hash_uses_safe_configuration_only(monkeypatch):
