@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ PAYMENT_DB_PATH = os.environ.get(
     str(Path(__file__).resolve().parent / "repoguard-payments.sqlite3"),
 )
 _LOCK = threading.Lock()
+_CURRENT_TRANSACTION_ID: ContextVar[str | None] = ContextVar("repoguard_payment_transaction_id", default=None)
 
 CHALLENGED = "CHALLENGED"
 PRESENTED = "PRESENTED"
@@ -99,6 +101,34 @@ class Transaction:
     response_json: str | None
     created_at_ms: int
     updated_at_ms: int
+
+
+def set_current_transaction(transaction_id: str | None) -> Token:
+    return _CURRENT_TRANSACTION_ID.set(transaction_id)
+
+
+def reset_current_transaction(token: Token) -> None:
+    _CURRENT_TRANSACTION_ID.reset(token)
+
+
+def current_transaction_id() -> str | None:
+    return _CURRENT_TRANSACTION_ID.get()
+
+
+def record_control_event(
+    event_type: str,
+    *,
+    transaction_id: str | None = None,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    with _LOCK, _connect() as conn:
+        _record_control_event_locked(
+            conn,
+            event_type,
+            transaction_id=transaction_id,
+            detail=detail,
+        )
+        conn.commit()
 
 
 def _now_ms() -> int:
