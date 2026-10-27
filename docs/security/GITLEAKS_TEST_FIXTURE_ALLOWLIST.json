@@ -1,0 +1,27 @@
+{
+  "schema": "repoguard.gitleaks-test-fixture-allowlist.v1",
+  "policy": "Only exact historical fingerprints for intentional secret-detection regression fixtures are allowed. Any other finding fails.",
+  "entries": [
+    {
+      "fingerprint": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b:backend/tests/test_scanner_regression.py:aws-access-token:105",
+      "rule_id": "aws-access-token",
+      "file": "backend/tests/test_scanner_regression.py",
+      "commit": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b",
+      "rationale": "Intentional fake AWS access-key-shaped string used to verify RepoGuard scanner detection."
+    },
+    {
+      "fingerprint": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b:backend/tests/test_scanner_regression.py:generic-api-key:92",
+      "rule_id": "generic-api-key",
+      "file": "backend/tests/test_scanner_regression.py",
+      "commit": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b",
+      "rationale": "Intentional fake OpenAI API-key-shaped string used to verify RepoGuard scanner detection."
+    },
+    {
+      "fingerprint": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b:backend/tests/test_scanner_regression.py:github-pat:99",
+      "rule_id": "github-pat",
+      "file": "backend/tests/test_scanner_regression.py",
+      "commit": "5f74b053abf759fdd32fca1ceb84efefc9f1f27b",
+      "rationale": "Intentional fake GitHub PAT-shaped string used to verify RepoGuard scanner detection."
+    }
+  ]
+}
