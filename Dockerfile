@@ -9,7 +9,11 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm typecheck && pnpm build
 
 FROM python:3.11-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ARG REPOGUARD_BUILD_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/raphaelbluai-private/RepoGuard-Buildathon-version-" \
+      org.opencontainers.image.revision="$REPOGUARD_BUILD_SHA"
+ENV REPOGUARD_RELEASE_SHA=$REPOGUARD_BUILD_SHA \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TMPDIR=/tmp/repoguard \
     REPOGUARD_CACHE_DB=/data/repoguard-cache.sqlite3 \
