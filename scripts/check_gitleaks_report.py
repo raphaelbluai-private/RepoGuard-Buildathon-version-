@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -44,6 +45,7 @@ def main() -> None:
 
     evidence = {
         "schema": "repoguard.repository-secret-history.v1",
+        "source_commit": os.getenv("REPOGUARD_SOURCE_SHA") or os.getenv("GITHUB_SHA"),
         "scanner": "gitleaks 8.21.2",
         "history_scope": "all fetched refs/history",
         "redacted": True,
