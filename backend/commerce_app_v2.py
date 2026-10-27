@@ -14,7 +14,7 @@ import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
 from operational_alerts import emit_alert
-from runtime_identity import require_runtime_identity, runtime_identity_view
+from runtime_identity import public_runtime_identity_view, require_runtime_identity, runtime_identity_view
 from payment_operations import (
     CHALLENGED,
     FULFILLED,
@@ -155,7 +155,7 @@ def v1_health():
         "public_preview_only": is_public_preview_only(),
         "x402_configured": bool(X402_PAY_TO),
         "max_concurrent_scans": MAX_CONCURRENT_SCANS,
-        "runtime_identity": runtime_identity_view(),
+        "runtime_identity": public_runtime_identity_view(),
         "persistent_cache": persistent_cache_stats(),
     }
 
@@ -548,6 +548,13 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
     }
 
 
+@app.get("/v1/repoguard/runtime-identity", include_in_schema=False)
+def full_runtime_identity():
+    if os.environ.get("REPOGUARD_INTERNAL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(status_code=404, detail={"error": "NOT_FOUND"})
+    return runtime_identity_view()
+
+
 @app.get("/v1/repoguard/payment-operations/metrics", include_in_schema=False)
 def payment_operations_metrics():
     if os.environ.get("REPOGUARD_INTERNAL", "").strip().lower() not in {"1", "true", "yes", "on"}:
@@ -775,6 +782,13 @@ async def _x402_verify_failure(context) -> None:
             failure_code="PAYMENT_VERIFICATION_REJECTED",
             retryable=False,
         )
+        emit_alert(
+            "PAYMENT_VERIFICATION_REJECTED",
+            severity="WARNING",
+            component="payments",
+            transaction_id=transaction_id,
+            retryable=False,
+        )
 
 
 async def _x402_before_settle(context) -> None:
@@ -822,6 +836,14 @@ async def _x402_settle_failure(context) -> None:
     error = getattr(context, "error", None) or getattr(context, "exception", None)
     message = str(error or "settlement failure")
     if "timeout" in message.lower():
+        emit_alert(
+            "SETTLEMENT_OUTCOME_UNKNOWN",
+            severity="ERROR",
+            component="payments",
+            transaction_id=transaction_id,
+            retryable=False,
+            detail={"reconciliation_required": True},
+        )
         record_control_event(
             "settlement_timeout_indeterminate",
             transaction_id=transaction_id,
@@ -832,6 +854,13 @@ async def _x402_settle_failure(context) -> None:
         transaction_id,
         SETTLEMENT_FAILED_RETRIABLE,
         failure_code="FACILITATOR_SETTLEMENT_FAILED",
+        retryable=True,
+    )
+    emit_alert(
+        "FACILITATOR_SETTLEMENT_FAILED",
+        severity="ERROR",
+        component="payments",
+        transaction_id=transaction_id,
         retryable=True,
     )
 
