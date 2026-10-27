@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import time
 from typing import Any
@@ -11,6 +13,30 @@ from pydantic import BaseModel, Field
 import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
+from payment_operations import (
+    CHALLENGED,
+    FULFILLED,
+    FULFILLMENT_FAILED_RETRIABLE,
+    FULFILLMENT_FAILED_TERMINAL,
+    FULFILLMENT_STARTED,
+    PRESENTED,
+    RECEIPT_ISSUED,
+    SETTLED,
+    SETTLEMENT_FAILED_RETRIABLE,
+    SETTLEMENT_PENDING,
+    VERIFIED,
+    VERIFICATION_REJECTED,
+    PaymentOperationError,
+    begin_transaction,
+    bind_presented_payment,
+    canonical_request_hash,
+    decode_settlement_header,
+    get_by_idempotency,
+    get_transaction,
+    issue_receipt,
+    payment_proof_digest,
+    transition,
+)
 from launch_security import (
     ScanConcurrencyGate,
     cors_origins,
@@ -28,6 +54,7 @@ from x402.http.middleware.fastapi import PaymentMiddlewareASGI
 from x402.http.types import RouteConfig
 from x402.mechanisms.evm.exact import ExactEvmServerScheme
 from x402.server import x402ResourceServer
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 app = FastAPI(title="RepoGuard Agent Commerce API", version="2.2.0")
@@ -127,6 +154,198 @@ class VerifyCommitRequest(RepoRequest):
     expected_commit_sha: str = Field(min_length=7, max_length=128)
 
 
+_PAID_SKU_BY_PATH = {
+    product.endpoint: product.sku for product in PRODUCTS.values() if product.paid
+}
+
+
+def _transaction_id(request: Request) -> str | None:
+    return getattr(request.state, "payment_transaction_id", None)
+
+
+def _begin_fulfillment(request: Request) -> None:
+    transaction_id = _transaction_id(request)
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx is None:
+        raise HTTPException(status_code=500, detail={"error": "PAYMENT_TRANSACTION_MISSING"})
+    if tx.state == PRESENTED:
+        transition(transaction_id, VERIFIED)
+        tx = get_transaction(transaction_id)
+    if tx and tx.state == VERIFIED:
+        transition(transaction_id, FULFILLMENT_STARTED)
+
+
+def _complete_fulfillment(request: Request, payload: dict[str, Any], *, cache_hit: bool | None = None) -> None:
+    transaction_id = _transaction_id(request)
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx and tx.state == FULFILLMENT_STARTED:
+        transition(
+            transaction_id,
+            FULFILLED,
+            cache_hit=cache_hit,
+            response_json=json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        )
+
+
+def _fail_fulfillment(request: Request, code: str, *, retryable: bool) -> None:
+    transaction_id = _transaction_id(request)
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx and tx.state in {VERIFIED, FULFILLMENT_STARTED}:
+        transition(
+            transaction_id,
+            FULFILLMENT_FAILED_RETRIABLE if retryable else FULFILLMENT_FAILED_TERMINAL,
+            failure_code=code,
+            retryable=retryable,
+        )
+
+
+class PaymentOperationsBoundary(BaseHTTPMiddleware):
+    """Outer boundary that prevents duplicate charge/fulfillment before x402 runs."""
+
+    async def dispatch(self, request: Request, call_next):
+        sku = _PAID_SKU_BY_PATH.get(request.url.path) if request.method.upper() == "POST" else None
+        if not sku or not X402_PAY_TO:
+            return await call_next(request)
+
+        product = get_product(sku)
+        try:
+            raw_body = await request.body()
+            body = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        except (UnicodeDecodeError, ValueError):
+            body = {"_invalid_json_sha256": hashlib.sha256(raw_body).hexdigest() if raw_body else ""}
+
+        request_hash = canonical_request_hash(sku=sku, body=body)
+        idempotency_key = (request.headers.get("idempotency-key") or "").strip() or None
+        proof = request.headers.get("payment-signature") or request.headers.get("x-payment")
+        proof_digest = payment_proof_digest(proof)
+
+        if idempotency_key:
+            existing = get_by_idempotency(idempotency_key)
+            if existing is not None:
+                if existing.request_hash != request_hash or existing.sku != sku:
+                    return JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": "IDEMPOTENCY_CONFLICT",
+                            "transaction_id": existing.transaction_id,
+                        },
+                    )
+                if existing.state in {SETTLED, RECEIPT_ISSUED} and existing.response_json:
+                    payload = json.loads(existing.response_json)
+                    response = JSONResponse(status_code=200, content=payload)
+                    response.headers["X-RepoGuard-Transaction-ID"] = existing.transaction_id
+                    response.headers["X-RepoGuard-Idempotent-Replay"] = "true"
+                    if existing.receipt_id:
+                        response.headers["X-RepoGuard-Receipt-ID"] = existing.receipt_id
+                    return response
+
+        transaction_id: str | None = None
+        if proof_digest:
+            try:
+                tx = begin_transaction(
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
+                    payment_digest=proof_digest,
+                    sku=sku,
+                    price_usd=product.price_usd,
+                    network=X402_NETWORK,
+                    facilitator_url=X402_FACILITATOR_URL,
+                )
+                if tx.state == CHALLENGED:
+                    tx = bind_presented_payment(tx.transaction_id, proof_digest)
+                transaction_id = tx.transaction_id
+                request.state.payment_transaction_id = transaction_id
+            except PaymentOperationError as exc:
+                record_event(
+                    "payment_replay_rejected" if exc.code == "REPLAY_REJECTED" else "payment_idempotency_conflict",
+                    status_code=409,
+                    network=X402_NETWORK,
+                    detail={"sku": sku, "transaction_id": exc.transaction_id},
+                )
+                return JSONResponse(
+                    status_code=409,
+                    content={"error": exc.code, "transaction_id": exc.transaction_id},
+                )
+
+        response = await call_next(request)
+
+        if not proof_digest and response.status_code == 402:
+            try:
+                tx = begin_transaction(
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
+                    payment_digest=None,
+                    sku=sku,
+                    price_usd=product.price_usd,
+                    network=X402_NETWORK,
+                    facilitator_url=X402_FACILITATOR_URL,
+                    challenged=True,
+                )
+                response.headers["X-RepoGuard-Transaction-ID"] = tx.transaction_id
+                response.headers["X-RepoGuard-Idempotency-Key"] = tx.idempotency_key
+            except PaymentOperationError:
+                pass
+            return response
+
+        if transaction_id:
+            settlement_value = response.headers.get("PAYMENT-RESPONSE") or response.headers.get("X-PAYMENT-RESPONSE")
+            settlement = decode_settlement_header(settlement_value)
+            tx = get_transaction(transaction_id)
+            if settlement_value and tx and tx.state == FULFILLED:
+                if bool(settlement.get("success", response.status_code < 400)):
+                    tx = transition(transaction_id, SETTLEMENT_PENDING)
+                    tx_hash = settlement.get("transaction") or settlement.get("transactionHash")
+                    tx = transition(
+                        transaction_id,
+                        SETTLED,
+                        transaction_hash=str(tx_hash) if tx_hash else None,
+                        retryable=False,
+                    )
+                    tx = issue_receipt(transaction_id)
+                    record_event(
+                        "payment_receipt_issued",
+                        status_code=response.status_code,
+                        network=X402_NETWORK,
+                        transaction_hash=tx.transaction_hash,
+                        cache_hit=tx.cache_hit,
+                        detail={"sku": sku, "transaction_id": transaction_id, "receipt_id": tx.receipt_id},
+                    )
+                else:
+                    transition(
+                        transaction_id,
+                        SETTLEMENT_FAILED_RETRIABLE,
+                        failure_code=str(settlement.get("errorReason") or settlement.get("error") or "SETTLEMENT_FAILED"),
+                        retryable=True,
+                    )
+            elif tx and tx.state == FULFILLED and response.status_code >= 400:
+                transition(
+                    transaction_id,
+                    SETTLEMENT_PENDING,
+                    failure_code="SETTLEMENT_OUTCOME_UNKNOWN",
+                    retryable=True,
+                )
+            elif tx and tx.state == PRESENTED and response.status_code == 402:
+                transition(
+                    transaction_id,
+                    VERIFICATION_REJECTED,
+                    failure_code="PAYMENT_VERIFICATION_REJECTED",
+                    retryable=False,
+                )
+
+            tx = get_transaction(transaction_id)
+            response.headers["X-RepoGuard-Transaction-ID"] = transaction_id
+            if tx and tx.receipt_id:
+                response.headers["X-RepoGuard-Receipt-ID"] = tx.receipt_id
+
+        return response
+
+
 def _provider_key(provider: str) -> str:
     return normalize_provider_key(provider)
 
@@ -172,8 +391,10 @@ def _identity(provider: str, repo: str) -> tuple[str, str | None, str]:
         raise HTTPException(status_code=503, detail={"error": "ADAPTER_RUNTIME_ERROR", "message": str(exc)}) from exc
 
 
-def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
+def _run_canonical_scan(body: RepoRequest, sku: str, request: Request) -> dict[str, Any]:
+    _begin_fulfillment(request)
     if not SCAN_CONCURRENCY_GATE.try_acquire():
+        _fail_fulfillment(request, "SCAN_CAPACITY_EXHAUSTED", retryable=True)
         raise HTTPException(
             status_code=503,
             detail={
@@ -184,6 +405,12 @@ def _run_canonical_scan(body: RepoRequest, sku: str) -> dict[str, Any]:
         )
     try:
         return _run_canonical_scan_acquired(body, sku)
+    except HTTPException as exc:
+        _fail_fulfillment(request, str((exc.detail or {}).get("error", "SCAN_FAILED")) if isinstance(exc.detail, dict) else "SCAN_FAILED", retryable=exc.status_code >= 500)
+        raise
+    except Exception as exc:
+        _fail_fulfillment(request, type(exc).__name__, retryable=True)
+        raise
     finally:
         SCAN_CONCURRENCY_GATE.release()
 
@@ -202,17 +429,28 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
         try:
             result = scan_repo_provider(provider, body.repo)
         except Exception as exc:
-            result = {
-                "ok": False,
-                "error": "SCAN_ERROR",
-                "provider": provider,
-                "message": f"Scan failed unexpectedly: {type(exc).__name__}",
-            }
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "SCAN_ERROR",
+                    "provider": provider,
+                    "message": f"Scan failed unexpectedly: {type(exc).__name__}",
+                },
+                headers={"Retry-After": "2"},
+            ) from exc
         if head_sha and isinstance(result, dict) and result.get("ok"):
             legacy._cache_put(repo_key, head_sha, result)
 
     if not isinstance(result, dict):
-        result = {"ok": False, "error": "INVALID_SCAN_RESULT", "provider": provider}
+        raise HTTPException(status_code=502, detail={"error": "INVALID_SCAN_RESULT", "provider": provider})
+    if result.get("ok") is False:
+        error_code = str(result.get("error") or "SCAN_FAILED")
+        retryable = error_code in {"NETWORK_ERROR", "RATE_LIMIT", "GITHUB_ERROR", "PROVIDER_TIMEOUT", "SCAN_ERROR"}
+        raise HTTPException(
+            status_code=503 if retryable else 422,
+            detail={"error": error_code, "message": result.get("message")},
+            headers={"Retry-After": "2"} if retryable else None,
+        )
 
     result_repo = result.get("repo") if isinstance(result.get("repo"), dict) else {}
     repository = result_repo.get("fullName") or repo_key.split(":", 1)[-1] or body.repo
@@ -353,45 +591,54 @@ def preflight(body: RepoRequest):
 
 
 @app.post("/v1/repoguard/verify")
-def verify_commit(body: VerifyCommitRequest):
-    provider = _require_active_provider(body.provider)
-    repo_key, current_sha, repository_url = _identity(provider, body.repo)
-    matched = bool(current_sha and current_sha == body.expected_commit_sha)
-    repository = repo_key.split(":", 1)[-1]
-    record_event(
-        "product_fulfilled",
-        status_code=200,
-        network=X402_NETWORK,
-        detail={"sku": "verify_commit", "provider": provider, "repository": repository, "matches": matched},
-    )
-    return {
-        "product": "verify_commit",
-        "price_usd": get_product("verify_commit").price_usd,
-        "provider": provider,
-        "repository": repository,
-        "repository_url": repository_url,
-        "expected_commit_sha": body.expected_commit_sha,
-        "current_commit_sha": current_sha,
-        "matches": matched,
-    }
+def verify_commit(body: VerifyCommitRequest, request: Request):
+    _begin_fulfillment(request)
+    try:
+        provider = _require_active_provider(body.provider)
+        repo_key, current_sha, repository_url = _identity(provider, body.repo)
+        matched = bool(current_sha and current_sha == body.expected_commit_sha)
+        repository = repo_key.split(":", 1)[-1]
+        payload = {
+            "product": "verify_commit",
+            "price_usd": get_product("verify_commit").price_usd,
+            "provider": provider,
+            "repository": repository,
+            "repository_url": repository_url,
+            "expected_commit_sha": body.expected_commit_sha,
+            "current_commit_sha": current_sha,
+            "matches": matched,
+        }
+        record_event(
+            "product_fulfilled",
+            status_code=200,
+            network=X402_NETWORK,
+            detail={"sku": "verify_commit", "provider": provider, "repository": repository, "matches": matched},
+        )
+        _complete_fulfillment(request, payload)
+        return payload
+    except HTTPException as exc:
+        _fail_fulfillment(request, "VERIFY_COMMIT_FAILED", retryable=exc.status_code >= 500)
+        raise
 
 
 @app.post("/v1/repoguard/safe-to-ship")
-def safe_to_ship(body: RepoRequest):
-    scan = _run_canonical_scan(body, "safe_to_ship")
-    return {
+def safe_to_ship(body: RepoRequest, request: Request):
+    scan = _run_canonical_scan(body, "safe_to_ship", request)
+    payload = {
         "product": "safe_to_ship",
         "price_usd": get_product("safe_to_ship").price_usd,
         "provider": scan["provider"],
         "repository": scan["repository"],
         **safe_to_ship_view(scan["result"], scan["provenance"]),
     }
+    _complete_fulfillment(request, payload, cache_hit=scan["cache_hit"])
+    return payload
 
 
 @app.post("/v1/repoguard/scan")
-def repo_scan(body: RepoRequest):
-    scan = _run_canonical_scan(body, "repo_scan")
-    return {
+def repo_scan(body: RepoRequest, request: Request):
+    scan = _run_canonical_scan(body, "repo_scan", request)
+    payload = {
         "service": "RepoGuard",
         "product": "repo_scan",
         "price_usd": get_product("repo_scan").price_usd,
@@ -405,12 +652,14 @@ def repo_scan(body: RepoRequest):
         "provenance": scan["provenance"],
         "result": scan["result"],
     }
+    _complete_fulfillment(request, payload, cache_hit=scan["cache_hit"])
+    return payload
 
 
 @app.post("/v1/repoguard/explain")
-def explain_findings(body: RepoRequest):
-    scan = _run_canonical_scan(body, "explain_findings")
-    return {
+def explain_findings(body: RepoRequest, request: Request):
+    scan = _run_canonical_scan(body, "explain_findings", request)
+    payload = {
         "product": "explain_findings",
         "price_usd": get_product("explain_findings").price_usd,
         "provider": scan["provider"],
@@ -418,18 +667,22 @@ def explain_findings(body: RepoRequest):
         "provenance": scan["provenance"],
         **remediation_view(scan["result"], scan["provenance"]["scan_id"]),
     }
+    _complete_fulfillment(request, payload, cache_hit=scan["cache_hit"])
+    return payload
 
 
 @app.post("/v1/repoguard/attest")
-def attest_scan(body: RepoRequest):
-    scan = _run_canonical_scan(body, "attest_scan")
-    return {
+def attest_scan(body: RepoRequest, request: Request):
+    scan = _run_canonical_scan(body, "attest_scan", request)
+    payload = {
         "product": "attest_scan",
         "price_usd": get_product("attest_scan").price_usd,
         "provider": scan["provider"],
         "repository": scan["repository"],
         "attestation": build_attestation(scan["provenance"]),
     }
+    _complete_fulfillment(request, payload, cache_hit=scan["cache_hit"])
+    return payload
 
 
 if X402_PAY_TO:
@@ -455,6 +708,7 @@ if X402_PAY_TO:
         )
 
     app.add_middleware(PaymentMiddlewareASGI, routes=paid_routes, server=x402_server)
+    app.add_middleware(PaymentOperationsBoundary)
 
 
 app.mount("/", legacy.app)
