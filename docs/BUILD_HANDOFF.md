@@ -50,26 +50,31 @@ The following launch-scope controls are implemented:
 14. request field/body sizes are bounded;
 15. concurrent scans are bounded by a fail-closed capacity gate;
 16. the production container runs as a non-root `repoguard` user;
-17. the hardened launch profile is documented in `.env.production.example`.
+17. the hardened launch profile is documented in `.env.production.example`;
+18. hardened API responses include HSTS, CSP, no-store, clickjacking, MIME, referrer and permissions-policy controls;
+19. hardened commerce POST routes use an in-process per-client/per-route rate window with 429 + Retry-After;
+20. provider timeout/runtime failures are protected by a fail-closed cooldown circuit breaker;
+21. repository history is scanned by Gitleaks in CI with only three exact historical fake-secret test-fixture fingerprints allowlisted.
 
 ## Current Validation Evidence
 
 Validated code checkpoint:
 
-`1fec8733234aa07cdc5da82ebaad5f2a1da8c986`
+`61f5518f0caa161a172325c40b1d8c333155bd5d`
 
 GitHub Actions run:
 
-`34777506621`
+`40458378397` / CI #437
 
 Result:
 
-- backend compile: PASSED
-- correctness-critical lint: PASSED
-- scanner/API/x402/discovery/telemetry/security regression suite: PASSED
-- frontend typecheck: PASSED
-- frontend production build: PASSED
-- production container build: PASSED
+- backend dependency audit / compile / correctness lint: PASSED
+- scanner/API/x402/security/payment/assurance regression suite: 167 PASSED
+- frontend dependency audit / typecheck / production build: PASSED
+- repository full-history secret policy gate: PASSED
+- hostile-staging security acceptance: PASSED
+- production container build / runtime smoke / actual-rootfs vulnerability gate: PASSED
+- RAPHAEL Gates 1–7 machine-readable evidence package: PASSED as a package; Gate 8 remains unauthorized
 
 Historical Green does not automatically carry forward to later source/runtime changes; release-candidate validation must be rerun on the final candidate.
 
@@ -83,18 +88,17 @@ Private/authenticated repository access remains disabled until customer-scoped a
 
 ## Remaining G1 Work
 
-G1 remains active until launch-scope Security Green is evidenced.
+Application-owned launch-scope hardening is substantially complete. Remaining G1/Gates 1–7 controls are now principally external or live-environment evidence:
 
-Required remaining work includes:
-
-1. run hostile/adversarial staging cases against SSRF, credential forwarding, URL redirects, malformed input, oversized input, concurrency/resource exhaustion, secret/log redaction, and legacy-route bypass;
-2. verify production security headers and deployed CORS behavior;
-3. run dependency/container vulnerability review and disposition findings;
-4. verify production runtime privilege and resource limits;
-5. verify platform/edge abuse protection or record the exact compensating application controls;
-6. resolve GitHub branch-protection/release-integrity gap;
-7. resolve the public repository / proprietary backend exposure decision;
-8. verify current hardened Railway deployment identity and health before moving to G2/G5 acceptance.
+1. verify Railway/platform egress restrictions;
+2. verify deployed runtime privilege/resource limits;
+3. verify edge/WAF/platform abuse controls;
+4. execute live load/resource acceptance;
+5. enable and verify `x402-production` branch protection / required checks;
+6. resolve the public repository / proprietary-source disposition;
+7. establish the signed/verifiably attributable release process;
+8. reconcile exact Railway deployed identity and volume recovery;
+9. complete live Base Sepolia/facilitator/payment acceptance.
 
 ## External / Administrative Gates
 
@@ -108,16 +112,18 @@ These may require Principal/admin action and must not be falsely marked complete
 
 ## Exact Next Work Package
 
-Continue **G1 — Launch-Scope Security Hardening**.
+**G7 — RAPHAEL Gates 1–7 evidence packaging is complete** on CI #437.
 
-After G1 Security Green:
+The next critical-path work is constrained by external/live dependencies:
 
-1. G2 — x402 contract/payment/idempotency reconciliation;
-2. G3–G4 — RAPHAEL v1.6 Production Realization evidence;
-3. G5 — live Base Sepolia acceptance;
-4. G6 — external-agent acceptance;
-5. G7 — Gates 1–7 evidence package and Gate 8 presentation;
-6. G8 — continue remaining full completion automatically.
+1. Gate 1 repository administration — branch protection, required checks, and public-source disposition;
+2. Gate 4/5 Railway platform evidence — egress, deployed identity, runtime/resource and volume recovery;
+3. Gate 6 edge/WAF + live load acceptance;
+4. Gate 7 / G5 live Base Sepolia and facilitator acceptance;
+5. G6 external-agent purchase;
+6. Gate 8 Principal launch authorization.
+
+Internally executable work may continue on the signed release / verification-receipt foundation without representing any external gate as passed.
 
 ## Critical-Path Freeze
 
@@ -180,3 +186,35 @@ Still not proven and therefore not Green:
 - Gate 8 authorization.
 
 Because live payment testing is currently unavailable, the next internally executable critical-path package is hostile staging/security acceptance excluding payment-network-dependent cases.
+
+
+## Gates 1–7 Evidence Package Update — 2026-10-27
+
+Validated engineering checkpoint:
+
+`61f5518f0caa161a172325c40b1d8c333155bd5d`
+
+GitHub Actions:
+
+`40458378397` / CI #437
+
+Machine-readable package:
+
+`build/release-evidence/raphael-security-gates-1-7.json`
+
+Canonical record:
+
+`docs/mission-assurance/RG-GATES-1-7-EVIDENCE.md`
+
+Current gate classification:
+
+- Gate 1 — BLOCKED: CI and secret-history controls pass; branch protection/required checks and public-source disposition remain;
+- Gate 2 — PASS;
+- Gate 3 — PASS for limited public-preview scope; private/multi-tenant access is deferred;
+- Gate 4 — BLOCKED only on deployed platform egress evidence;
+- Gate 5 — BLOCKED only on Railway deployed identity/infrastructure evidence;
+- Gate 6 — BLOCKED only on edge/WAF and live load evidence; application concurrency, rate limiting, circuit breaker and hostile tests pass;
+- Gate 7 — BLOCKED only on live Base Sepolia and Railway volume recovery evidence;
+- Gate 8 — NOT AUTHORIZED.
+
+Package completion is not launch authorization.
