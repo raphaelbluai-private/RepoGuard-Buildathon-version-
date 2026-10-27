@@ -132,6 +132,22 @@ REPO GUARD
 │   ├── 🟥 external autonomous-agent purchase
 │   └── 🟥 Base mainnet Principal authorization
 │
+├── 🟨 PAYMENT OPERATIONS ASSURANCE
+│   ├── 🟨 durable transaction state machine — code complete; exact-head CI pending
+│   ├── 🟨 x402 verify/settle lifecycle hook binding — code complete; exact-head CI pending
+│   ├── 🟨 idempotency / duplicate fulfillment protection — code complete; live proof pending
+│   ├── 🟨 payment-proof replay protection — code complete; live hostile proof pending
+│   ├── 🟨 scanner-failure-after-payment protection — code complete; live proof pending
+│   ├── 🟨 settlement-timeout reconciliation semantics — code complete; live drill pending
+│   ├── 🟨 payment telemetry metrics — code complete; production observation pending
+│   ├── 🟨 facilitator failure matrix — code complete; controlled/live evidence pending
+│   ├── 🟩 x402 SDK pinned to qualified engineering version 2.22.0
+│   ├── 🟩 post-presentation automatic facilitator failover prohibited
+│   ├── 🟥 measured facilitator reliability
+│   ├── 🟥 authoritative facilitator rate/volume limits
+│   ├── 🟥 live Base Sepolia idempotency/replay/reconciliation acceptance
+│   └── 🟥 production/mainnet facilitator qualification
+│
 ├── 🟩 PROVENANCE / BASIC ATTESTATION FOUNDATION
 │   ├── 🟩 scan ID
 │   ├── 🟩 repository/provider identity
@@ -238,7 +254,7 @@ REPO GUARD
     ├── 🟨 G0 canonical reconciliation — substantially complete
     ├── 🟨 G1 launch-scope security hardening — active
     ├── 🟥 hostile staging acceptance
-    ├── 🟥 G2 x402 contract/idempotency reconciliation
+    ├── 🟨 G2 payment operations assurance — code built; exact-head CI/live evidence pending
     ├── 🟥 G3–G4 v1.6 Production Realization evidence
     ├── 🟥 G5 live hardened Base Sepolia acceptance
     ├── 🟥 G6 external-agent acceptance
