@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 import commerce_app_v2
 from launch_security import (
+    ProviderCircuitBreaker,
+    RequestRateLimiter,
     ScanConcurrencyGate,
     cors_origins,
     is_legacy_route_blocked,
@@ -102,3 +104,60 @@ def test_commerce_scan_rejects_when_concurrency_capacity_is_exhausted(monkeypatc
         commerce_app_v2._run_canonical_scan(body, "repo_scan")
     assert exc.value.status_code == 503
     assert exc.value.detail["error"] == "SCAN_CAPACITY_EXHAUSTED"
+
+
+
+def test_request_rate_limiter_uses_bounded_window():
+    limiter = RequestRateLimiter(limit=2, window_seconds=10)
+    assert limiter.allow("client", now=100.0) is True
+    assert limiter.allow("client", now=101.0) is True
+    assert limiter.allow("client", now=102.0) is False
+    assert limiter.retry_after("client", now=102.0) >= 1
+    assert limiter.allow("client", now=111.1) is True
+
+
+def test_hardened_commerce_post_rate_limit_returns_429(monkeypatch):
+    monkeypatch.setattr(
+        commerce_app_v2,
+        "REQUEST_RATE_LIMITER",
+        RequestRateLimiter(limit=1, window_seconds=60),
+    )
+    client = TestClient(commerce_app_v2.app)
+    body = {"repo": "owner/repo", "provider": "unsupported"}
+    first = client.post("/v1/repoguard/preflight", json=body)
+    second = client.post("/v1/repoguard/preflight", json=body)
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error"] == "RATE_LIMITED"
+    assert int(second.headers["retry-after"]) >= 1
+
+
+def test_provider_circuit_breaker_opens_and_recovers():
+    breaker = ProviderCircuitBreaker(failure_threshold=2, cooldown_seconds=30)
+    assert breaker.allow_call("github", now=100.0) is True
+    breaker.record_failure("github", now=101.0)
+    assert breaker.allow_call("github", now=102.0) is True
+    breaker.record_failure("github", now=103.0)
+    assert breaker.allow_call("github", now=104.0) is False
+    assert breaker.retry_after("github", now=104.0) >= 1
+    assert breaker.allow_call("github", now=134.0) is True
+
+
+def test_provider_circuit_opens_after_repeated_runtime_failures(monkeypatch):
+    breaker = ProviderCircuitBreaker(failure_threshold=2, cooldown_seconds=30)
+    monkeypatch.setattr(commerce_app_v2, "PROVIDER_CIRCUIT_BREAKER", breaker)
+    monkeypatch.setattr(
+        commerce_app_v2,
+        "repo_head_identity",
+        lambda provider, repo: (_ for _ in ()).throw(TimeoutError("provider timeout")),
+    )
+
+    for _ in range(2):
+        with pytest.raises(HTTPException):
+            commerce_app_v2._identity("github", "owner/repo")
+
+    with pytest.raises(HTTPException) as exc:
+        commerce_app_v2._identity("github", "owner/repo")
+    assert exc.value.status_code == 503
+    assert exc.value.detail["error"] == "PROVIDER_CIRCUIT_OPEN"
+    assert int(exc.value.headers["Retry-After"]) >= 1
