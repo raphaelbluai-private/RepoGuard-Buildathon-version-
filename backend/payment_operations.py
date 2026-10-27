@@ -137,6 +137,17 @@ def _connect() -> sqlite3.Connection:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS payment_control_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            occurred_at_ms INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            transaction_id TEXT,
+            detail_json TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS payment_transitions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             transaction_id TEXT NOT NULL,
@@ -227,6 +238,28 @@ def get_by_payment_digest(digest: str) -> Transaction | None:
             "SELECT * FROM payment_transactions WHERE payment_proof_digest=?",
             (digest,),
         ).fetchone())
+
+
+def _record_control_event_locked(
+    conn: sqlite3.Connection,
+    event_type: str,
+    *,
+    transaction_id: str | None = None,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO payment_control_events
+        (occurred_at_ms, event_type, transaction_id, detail_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            _now_ms(),
+            event_type,
+            transaction_id,
+            json.dumps(detail or {}, sort_keys=True, separators=(",", ":")),
+        ),
+    )
 
 
 def _transition_locked(
@@ -337,6 +370,11 @@ def begin_transaction(
         ).fetchone())
         if existing is not None:
             if existing.request_hash != request_hash or existing.sku != sku:
+                _record_control_event_locked(
+                    conn,
+                    "idempotency_conflict",
+                    transaction_id=existing.transaction_id,
+                )
                 if existing.state not in TERMINAL_STATES:
                     existing = _transition_locked(
                         conn,
@@ -359,6 +397,13 @@ def begin_transaction(
                 (payment_digest,),
             ).fetchone())
             if reused is not None:
+                _record_control_event_locked(
+                    conn,
+                    "replay_attempt",
+                    transaction_id=reused.transaction_id,
+                    detail={"sku": sku},
+                )
+                conn.commit()
                 raise PaymentOperationError(
                     "REPLAY_REJECTED",
                     "Payment proof has already been presented.",
@@ -484,6 +529,12 @@ def metrics() -> dict[str, Any]:
                 "SELECT state, COUNT(*) FROM payment_transactions GROUP BY state"
             ).fetchall()
         }
+        transition_counts = {
+            str(r[0]): int(r[1])
+            for r in conn.execute(
+                "SELECT new_state, COUNT(*) FROM payment_transitions GROUP BY new_state"
+            ).fetchall()
+        }
         sku_volume = {
             str(r[0]): int(r[1])
             for r in conn.execute(
@@ -507,52 +558,78 @@ def metrics() -> dict[str, Any]:
         cache = conn.execute(
             """
             SELECT
-              SUM(CASE WHEN cache_hit=1 THEN 1 ELSE 0 END),
+              SUM(CASE WHEN cache_hit=1 AND state IN (?, ?) THEN 1 ELSE 0 END),
               SUM(CASE WHEN state IN (?, ?) THEN 1 ELSE 0 END)
             FROM payment_transactions
             """,
-            (SETTLED, RECEIPT_ISSUED),
+            (SETTLED, RECEIPT_ISSUED, SETTLED, RECEIPT_ISSUED),
         ).fetchone()
         replay_attempts = int(conn.execute(
-            "SELECT COUNT(*) FROM payment_transitions WHERE new_state=?",
-            (REPLAY_REJECTED,),
+            "SELECT COUNT(*) FROM payment_control_events WHERE event_type='replay_attempt'"
         ).fetchone()[0])
-        latencies = [
-            int(r[0])
-            for r in conn.execute(
-                """
-                SELECT updated_at_ms-created_at_ms FROM payment_transactions
-                WHERE state IN (?, ?) ORDER BY updated_at_ms-created_at_ms
-                """,
-                (SETTLED, RECEIPT_ISSUED),
-            ).fetchall()
-        ]
+        rows = conn.execute(
+            """
+            SELECT transaction_id, occurred_at_ms, new_state
+            FROM payment_transitions
+            ORDER BY transaction_id, occurred_at_ms, id
+            """
+        ).fetchall()
+
+    timeline: dict[str, dict[str, int]] = {}
+    for row in rows:
+        timeline.setdefault(str(row[0]), {})[str(row[2])] = int(row[1])
+
+    verify_latencies: list[int] = []
+    fulfillment_latencies: list[int] = []
+    settlement_latencies: list[int] = []
+    total_latencies: list[int] = []
+    for states in timeline.values():
+        if PRESENTED in states and VERIFIED in states:
+            verify_latencies.append(max(0, states[VERIFIED] - states[PRESENTED]))
+        if FULFILLMENT_STARTED in states and FULFILLED in states:
+            fulfillment_latencies.append(max(0, states[FULFILLED] - states[FULFILLMENT_STARTED]))
+        if SETTLEMENT_PENDING in states and SETTLED in states:
+            settlement_latencies.append(max(0, states[SETTLED] - states[SETTLEMENT_PENDING]))
+        start = states.get(PRESENTED) or states.get(CHALLENGED)
+        end = states.get(RECEIPT_ISSUED) or states.get(SETTLED)
+        if start is not None and end is not None:
+            total_latencies.append(max(0, end - start))
 
     def percentile(values: list[int], p: float) -> int | None:
         if not values:
             return None
-        index = min(len(values) - 1, max(0, int(round((len(values) - 1) * p))))
-        return values[index]
+        ordered = sorted(values)
+        index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * p))))
+        return ordered[index]
 
-    settled = by_state.get(SETTLED, 0) + by_state.get(RECEIPT_ISSUED, 0)
-    presented = total - by_state.get(CHALLENGED, 0)
-    settlement_failures = by_state.get(SETTLEMENT_FAILED_RETRIABLE, 0) + by_state.get(SETTLEMENT_FAILED_TERMINAL, 0)
-    fulfillment_failures = by_state.get(FULFILLMENT_FAILED_RETRIABLE, 0) + by_state.get(FULFILLMENT_FAILED_TERMINAL, 0)
-    fulfilled_population = max(1, settled + settlement_failures)
-    verified_population = max(1, fulfilled_population + fulfillment_failures)
+    challenged = transition_counts.get(CHALLENGED, 0)
+    presented = transition_counts.get(PRESENTED, 0)
+    settled = transition_counts.get(SETTLED, 0)
+    settlement_failures = transition_counts.get(SETTLEMENT_FAILED_RETRIABLE, 0) + transition_counts.get(SETTLEMENT_FAILED_TERMINAL, 0)
+    fulfillment_failures = transition_counts.get(FULFILLMENT_FAILED_RETRIABLE, 0) + transition_counts.get(FULFILLMENT_FAILED_TERMINAL, 0)
+    settlement_attempts = settled + settlement_failures
+    verified = transition_counts.get(VERIFIED, 0)
     cache_hits = int(cache[0] or 0)
     successful = int(cache[1] or 0)
+
+    def latency(values: list[int]) -> dict[str, int | None]:
+        return {"p50": percentile(values, 0.50), "p95": percentile(values, 0.95)}
+
     return {
         "transactions": total,
-        "challenge_rate": (by_state.get(CHALLENGED, 0) / total) if total else 0.0,
-        "payment_success_rate": (settled / presented) if presented else 0.0,
-        "settlement_failure_rate": settlement_failures / fulfilled_population,
-        "fulfillment_failure_rate": fulfillment_failures / verified_population,
-        "total_latency_ms_p50": percentile(latencies, 0.50),
-        "total_latency_ms_p95": percentile(latencies, 0.95),
+        "challenge_rate": challenged / max(1, challenged + presented),
+        "payment_success_rate": settled / presented if presented else 0.0,
+        "settlement_failure_rate": settlement_failures / settlement_attempts if settlement_attempts else 0.0,
+        "fulfillment_failure_rate": fulfillment_failures / verified if verified else 0.0,
+        "latency_ms": {
+            "verify": latency(verify_latencies),
+            "fulfillment": latency(fulfillment_latencies),
+            "settlement": latency(settlement_latencies),
+            "total": latency(total_latencies),
+        },
         "sku_volume": sku_volume,
         "revenue_by_sku_usd": revenue_by_sku,
         "replay_attempts": replay_attempts,
-        "cache_assisted_fulfillment_rate": (cache_hits / successful) if successful else 0.0,
+        "cache_assisted_fulfillment_rate": cache_hits / successful if successful else 0.0,
         "states": by_state,
     }
