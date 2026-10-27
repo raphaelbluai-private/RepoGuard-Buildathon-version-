@@ -31,7 +31,9 @@ RUN python -m pip install --no-cache-dir --upgrade \
         "setuptools==84.2.1" \
         "wheel==0.46.3" \
     && pip install --no-cache-dir -r /app/backend/requirements.txt \
-    && pip install --no-cache-dir "jaraco.context==6.1.2"
+    && python -m pip uninstall -y setuptools wheel \
+    && python -m pip uninstall -y pip \
+    && rm -rf /usr/local/lib/python3.11/ensurepip
 COPY backend /app/backend
 COPY --from=frontend /app/artifacts /app/artifacts
 RUN mkdir -p /data /tmp/repoguard \
