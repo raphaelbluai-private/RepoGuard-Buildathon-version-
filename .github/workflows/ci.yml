@@ -150,6 +150,8 @@ jobs:
           uv sync --group dev --frozen
       - name: Generate exact-SHA release manifest
         run: uv run python scripts/generate_release_evidence.py
+      - name: Generate release readiness evidence
+        run: uv run python scripts/generate_release_readiness.py
       - name: Generate machine-readable dependency inventories
         run: |
           uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file build/release-evidence/python-production-requirements.txt
@@ -163,6 +165,11 @@ jobs:
           assert p["source_commit"] == os.environ["GITHUB_SHA"]
           assert p["dirty"] is False
           assert p["runtime_identity_required_for_authorized_release"] is True
+          readiness = json.loads(Path("build/release-evidence/release-readiness-evidence.json").read_text())
+          assert readiness["source_commit"] == os.environ["GITHUB_SHA"]
+          assert readiness["engineering_evidence_current"] is True
+          assert readiness["release_authorized"] is False
+          assert "live_base_sepolia_acceptance" in readiness["live_blockers"]
           PY
       - name: Upload release evidence
         uses: actions/upload-artifact@v4
