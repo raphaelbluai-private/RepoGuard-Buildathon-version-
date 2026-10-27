@@ -13,6 +13,7 @@ This runbook governs the hardened public-repository RepoGuard commerce service o
 5. Configure runtime identity variables. For authorized deployment, set `REPOGUARD_REQUIRE_RUNTIME_IDENTITY=1`.
 6. Verify `/v1/health` reports `status=ok`, the expected source commit, a configuration hash, and `identity_complete=true`.
 7. Internal operators may query `/v1/repoguard/runtime-identity` only with `REPOGUARD_INTERNAL=1`.
+8. Query `/v1/repoguard/operational-readiness` internally and require `status=ENGINEERING_READY` before any authorized deployment acceptance. This report never grants launch authorization; live evidence and RAPHAEL gates remain separate.
 
 ## Stop conditions
 
@@ -63,3 +64,10 @@ For every release candidate retain:
 ## Escalation
 
 Security, payment-integrity, runtime-identity, or persistence failures are release blockers. They are not downgraded to warnings for schedule convenience.
+
+
+## Structured alert handling
+
+Operational alerts are JSON events under `repoguard.ops`. Secret-like detail keys (token, secret, password, credential, signature, authorization, private/API key) are recursively redacted at the alert boundary. Treat any failure of that redaction regression as a release blocker.
+
+The application emits structured alerts for scanner-capacity exhaustion, scan execution exceptions, payment verification rejection, settlement failures, and indeterminate settlement timeouts. Live alert delivery to an operator notification sink remains a platform acceptance requirement.
