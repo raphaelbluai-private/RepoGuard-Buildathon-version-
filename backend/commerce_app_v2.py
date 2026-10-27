@@ -35,6 +35,7 @@ from payment_operations import (
     get_by_idempotency,
     get_transaction,
     issue_receipt,
+    metrics as payment_metrics,
     payment_proof_digest,
     record_control_event,
     reset_current_transaction,
@@ -519,6 +520,18 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
         "latency_ms": latency_ms,
         "result": result,
         "provenance": provenance,
+    }
+
+
+@app.get("/v1/repoguard/payment-operations/metrics", include_in_schema=False)
+def payment_operations_metrics():
+    if os.environ.get("REPOGUARD_INTERNAL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(status_code=404, detail={"error": "NOT_FOUND"})
+    return {
+        "service": "RepoGuard",
+        "scope": "payment_operations",
+        "network": X402_NETWORK,
+        "metrics": payment_metrics(),
     }
 
 
