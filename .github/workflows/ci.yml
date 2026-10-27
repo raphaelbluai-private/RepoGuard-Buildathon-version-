@@ -13,6 +13,10 @@ concurrency:
   group: repoguard-ci-${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
+env:
+  REPOGUARD_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  REPOGUARD_RELEASE_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
 jobs:
   frontend:
     name: Frontend — Type Check, Audit & Build
@@ -76,7 +80,6 @@ jobs:
           backend/performance_budgets.py
           backend/release_assurance.py
           backend/operational_readiness.py
-          backend/release_assurance.py
       - name: Lint correctness-critical rules
         run: >-
           uv run ruff check --select E4,E7,E9,F
@@ -141,7 +144,7 @@ jobs:
           out = Path("build/release-evidence")
           report = {
               "schema": "repoguard.hostile-staging-report.v1",
-              "source_commit": os.environ["GITHUB_SHA"],
+              "source_commit": os.environ["REPOGUARD_SOURCE_SHA"],
               "payment_network_used": False,
               "scope": [
                   "malicious_provider_host",
@@ -160,7 +163,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: repoguard-hostile-staging-${{ github.sha }}
+          name: repoguard-hostile-staging-${{ env.REPOGUARD_SOURCE_SHA }}
           path: build/release-evidence/hostile-staging-*
           retention-days: 30
 
@@ -171,15 +174,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build production image
-        run: docker build --build-arg REPOGUARD_BUILD_SHA=${{ github.sha }} --tag repoguard-ci:${{ github.sha }} .
+        run: docker build --build-arg REPOGUARD_BUILD_SHA=${{ env.REPOGUARD_SOURCE_SHA }} --tag repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} .
       - name: Verify embedded source revision
         run: |
-          test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ github.sha }})" = "${{ github.sha }}"
+          test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }})" = "${{ env.REPOGUARD_SOURCE_SHA }}"
       - name: Capture container provenance
         run: |
           mkdir -p build/release-evidence
-          docker image inspect repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-inspect.json
-          docker image inspect --format='{{.Id}}' repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-id.txt
+          docker image inspect repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-image-inspect.json
+          docker image inspect --format='{{.Id}}' repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-image-id.txt
       - name: Scan production image for HIGH/CRITICAL vulnerabilities
         run: |
           set -o pipefail
@@ -190,12 +193,12 @@ jobs:
             --ignore-unfixed \
             --severity HIGH,CRITICAL \
             --format table \
-            repoguard-ci:${{ github.sha }} | tee build/release-evidence/container-vulnerability-report.txt
+            repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} | tee build/release-evidence/container-vulnerability-report.txt
       - name: Upload container security/provenance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: repoguard-container-provenance-${{ github.sha }}
+          name: repoguard-container-provenance-${{ env.REPOGUARD_SOURCE_SHA }}
           path: build/release-evidence/
           retention-days: 30
 
@@ -225,7 +228,7 @@ jobs:
         run: uv run python scripts/generate_release_readiness.py
       - name: Generate branch/repository release assurance evidence
         env:
-          REPOGUARD_RELEASE_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          REPOGUARD_RELEASE_BRANCH: ${{ env.REPOGUARD_RELEASE_BRANCH }}
           REPOGUARD_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
         run: uv run python scripts/generate_release_assurance.py
       - name: Generate machine-readable dependency inventories
@@ -238,22 +241,22 @@ jobs:
           import json, os
           from pathlib import Path
           p = json.loads(Path("build/release-evidence/release-manifest.json").read_text())
-          assert p["source_commit"] == os.environ["GITHUB_SHA"]
+          assert p["source_commit"] == os.environ["REPOGUARD_SOURCE_SHA"]
           assert p["dirty"] is False
           assert p["runtime_identity_required_for_authorized_release"] is True
           readiness = json.loads(Path("build/release-evidence/release-readiness-evidence.json").read_text())
-          assert readiness["source_commit"] == os.environ["GITHUB_SHA"]
+          assert readiness["source_commit"] == os.environ["REPOGUARD_SOURCE_SHA"]
           assert readiness["engineering_evidence_current"] is True
           assert readiness["release_authorized"] is False
           assert "live_base_sepolia_acceptance" in readiness["live_blockers"]
           assurance = json.loads(Path("build/release-evidence/release-assurance.json").read_text())
           assert assurance["branch"] == "x402-production"
-          assert assurance["source_sha"] == os.environ["GITHUB_SHA"]
+          assert assurance["source_sha"] == os.environ["REPOGUARD_SOURCE_SHA"]
           assert assurance["release_authorized"] is False
           PY
       - name: Upload release evidence
         uses: actions/upload-artifact@v4
         with:
-          name: repoguard-release-evidence-${{ github.sha }}
+          name: repoguard-release-evidence-${{ env.REPOGUARD_SOURCE_SHA }}
           path: build/release-evidence/
           retention-days: 30
