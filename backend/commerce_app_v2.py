@@ -244,6 +244,27 @@ class PaymentOperationsBoundary(BaseHTTPMiddleware):
                     if existing.receipt_id:
                         response.headers["X-RepoGuard-Receipt-ID"] = existing.receipt_id
                     return response
+                if existing.state in {VERIFIED, FULFILLMENT_STARTED}:
+                    response = JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": "TRANSACTION_IN_PROGRESS",
+                            "transaction_id": existing.transaction_id,
+                            "state": existing.state,
+                        },
+                    )
+                    response.headers["Retry-After"] = "2"
+                    return response
+                if existing.state in {FULFILLED, SETTLEMENT_PENDING}:
+                    return JSONResponse(
+                        status_code=409,
+                        content={
+                            "error": "PAYMENT_RECONCILIATION_REQUIRED",
+                            "transaction_id": existing.transaction_id,
+                            "state": existing.state,
+                            "message": "Do not submit another payment until settlement is reconciled.",
+                        },
+                    )
 
         transaction_id: str | None = None
         if proof_digest:
