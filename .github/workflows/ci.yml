@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -44,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
@@ -78,6 +82,8 @@ jobs:
           backend/runtime_identity.py
           backend/operational_alerts.py
           backend/performance_budgets.py
+          backend/operational_readiness.py
+          backend/release_assurance.py
           backend/release_assurance.py
           backend/operational_readiness.py
       - name: Lint correctness-critical rules
@@ -120,6 +126,8 @@ jobs:
     needs: [backend]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
@@ -173,6 +181,8 @@ jobs:
     needs: [frontend, backend, hostile-staging]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
       - name: Build production image
         run: docker build --build-arg REPOGUARD_BUILD_SHA=${{ env.REPOGUARD_SOURCE_SHA }} --tag repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} .
       - name: Verify embedded source revision
@@ -208,6 +218,8 @@ jobs:
     needs: [frontend, backend, hostile-staging, container]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
       - uses: pnpm/action-setup@v4
         with:
           version: 9
