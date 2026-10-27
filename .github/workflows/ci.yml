@@ -195,15 +195,36 @@ jobs:
           docker image inspect --format='{{.Id}}' repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-image-id.txt
       - name: Scan production image for HIGH/CRITICAL vulnerabilities
         run: |
-          set -o pipefail
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:0.58.2 image \
-            --exit-code 1 \
+            --exit-code 0 \
             --ignore-unfixed \
+            --scanners vuln \
             --severity HIGH,CRITICAL \
-            --format table \
-            repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} | tee build/release-evidence/container-vulnerability-report.txt
+            --format json \
+            repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-vulnerability-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("build/release-evidence/container-vulnerability-report.json").read_text())
+          findings = []
+          for result in report.get("Results") or []:
+              target = result.get("Target")
+              for vuln in result.get("Vulnerabilities") or []:
+                  findings.append({
+                      "target": target,
+                      "package": vuln.get("PkgName"),
+                      "installed": vuln.get("InstalledVersion"),
+                      "fixed": vuln.get("FixedVersion"),
+                      "severity": vuln.get("Severity"),
+                      "id": vuln.get("VulnerabilityID"),
+                      "path": vuln.get("PkgPath") or vuln.get("PkgIdentifier", {}).get("PURL"),
+                  })
+          print(json.dumps(findings, indent=2, sort_keys=True))
+          if findings:
+              raise SystemExit(f"Container vulnerability gate failed with {len(findings)} HIGH/CRITICAL fixed finding(s)")
+          PY
       - name: Upload container security/provenance evidence
         if: always()
         uses: actions/upload-artifact@v4
