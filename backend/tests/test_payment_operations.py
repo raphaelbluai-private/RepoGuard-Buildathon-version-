@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
 import commerce_app_v2
 import payment_operations as po
@@ -151,3 +152,23 @@ def test_wrong_network_and_amount_are_bound_to_transaction_contract(tmp_path, mo
     tx = _begin(network="eip155:84532", price_usd="0.07")
     assert tx.network == "eip155:84532"
     assert tx.price_usd == "0.07"
+
+
+def test_internal_payment_metrics_surface_is_aggregate_only(tmp_path, monkeypatch):
+    _fresh_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("REPOGUARD_INTERNAL", "1")
+    tx = _begin()
+    po.transition(tx.transaction_id, po.VERIFIED)
+    po.transition(tx.transaction_id, po.FULFILLMENT_STARTED)
+    po.transition(tx.transaction_id, po.FULFILLED, cache_hit=False, response_json='{"ok":true}')
+    po.transition(tx.transaction_id, po.SETTLEMENT_PENDING)
+    po.transition(tx.transaction_id, po.SETTLED, transaction_hash="0xabc")
+    po.issue_receipt(tx.transaction_id)
+
+    response = TestClient(commerce_app_v2.app).get("/v1/repoguard/payment-operations/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["metrics"]["sku_volume"]["repo_scan"] == 1
+    serialized = json.dumps(payload)
+    assert "proof-1" not in serialized
+    assert "payment_proof_digest" not in serialized
