@@ -50,3 +50,30 @@ The following remain live/platform gates and cannot be Green from CI alone:
 ## SBOM-equivalent disposition
 
 For the current pre-launch candidate, CI emits machine-readable production dependency inventories from both committed lock graphs together with exact lockfile hashes in the release manifest and container inspection evidence. This is accepted as the current justified dependency-provenance equivalent. A formal standardized SBOM may replace or supplement it before wider production authorization without changing product behavior.
+
+
+## Verified engineering evidence
+
+Validated code SHA: `1fe40efabe5375e7f2b48e9a83246d6b55ca3b40`
+
+GitHub Actions: run `40438665107` / CI #331
+
+Result:
+
+- frontend dependency audit: PASS
+- frontend typecheck/build: PASS
+- Python dependency audit: PASS
+- compile/lint: PASS
+- backend regression/security/payment/production-realization suite: 138 PASS
+- cross-process cache/payment/telemetry recovery: PASS
+- runtime authorized-release drift rejection: PASS
+- production container build: PASS
+- embedded OCI source revision verification: PASS
+- container provenance artifact: PASS
+- exact-SHA release manifest: PASS
+- machine-readable production dependency inventories: PASS
+- release evidence upload: PASS
+
+**Engineering status:** GREEN for internally verifiable G3–G4 controls.
+
+**Live/platform status:** YELLOW/RED where Railway deployment identity, platform volume restart, live alert delivery, live performance/load, edge abuse controls, or payment-network evidence is required.
