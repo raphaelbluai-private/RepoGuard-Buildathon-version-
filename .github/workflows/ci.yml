@@ -210,17 +210,23 @@ jobs:
           mkdir -p build/release-evidence
           docker image inspect repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-image-inspect.json
           docker image inspect --format='{{.Id}}' repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-image-id.txt
-      - name: Scan production image for HIGH/CRITICAL vulnerabilities
+      - name: Export final runtime filesystem for vulnerability scan
+        run: |
+          cid="$(docker create repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }})"
+          mkdir -p build/release-evidence/rootfs
+          docker export "$cid" | tar -x -C build/release-evidence/rootfs
+          docker rm "$cid"
+      - name: Scan actual runtime rootfs for HIGH/CRITICAL vulnerabilities
         run: |
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.58.2 image \
+            -v "${{ github.workspace }}/build/release-evidence/rootfs:/rootfs:ro" \
+            aquasec/trivy:0.58.2 rootfs \
             --exit-code 0 \
             --ignore-unfixed \
             --scanners vuln \
             --severity HIGH,CRITICAL \
             --format json \
-            repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} > build/release-evidence/container-vulnerability-report.json
+            /rootfs > build/release-evidence/container-vulnerability-report.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -238,10 +244,16 @@ jobs:
                       "id": vuln.get("VulnerabilityID"),
                       "path": vuln.get("PkgPath") or vuln.get("PkgIdentifier", {}).get("PURL"),
                   })
+          Path("build/release-evidence/container-vulnerability-findings.json").write_text(
+              json.dumps(findings, indent=2, sort_keys=True) + "\n"
+          )
           print(json.dumps(findings, indent=2, sort_keys=True))
           if findings:
-              raise SystemExit(f"Container vulnerability gate failed with {len(findings)} HIGH/CRITICAL fixed finding(s)")
+              raise SystemExit(f"Container rootfs vulnerability gate failed with {len(findings)} HIGH/CRITICAL fixed finding(s)")
           PY
+      - name: Remove exported rootfs before artifact upload
+        if: always()
+        run: rm -rf build/release-evidence/rootfs
       - name: Upload container security/provenance evidence
         if: always()
         uses: actions/upload-artifact@v4
