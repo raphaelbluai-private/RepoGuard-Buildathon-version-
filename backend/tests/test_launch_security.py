@@ -82,6 +82,8 @@ def test_hardened_commerce_surface_emits_baseline_security_headers():
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
     assert response.headers["strict-transport-security"].startswith("max-age=")
+    assert response.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_scan_concurrency_gate_fails_closed_when_capacity_is_exhausted():
