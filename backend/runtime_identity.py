@@ -85,10 +85,22 @@ def require_runtime_identity() -> None:
     required = os.getenv("REPOGUARD_REQUIRE_RUNTIME_IDENTITY", "0").strip().lower() in {
         "1", "true", "yes", "on"
     }
-    if required and not runtime_identity().identity_complete:
+    identity = runtime_identity()
+    if required and not identity.identity_complete:
         raise RuntimeError(
             "Runtime identity is required but source commit plus deployment/image identity are unavailable."
         )
+    authorized = os.getenv("REPOGUARD_AUTHORIZED_RELEASE_SHA")
+    if authorized:
+        authorized = authorized.strip()
+        if not identity.source_commit:
+            raise RuntimeError(
+                "Authorized release SHA is configured but runtime source identity is unavailable."
+            )
+        if identity.source_commit != authorized:
+            raise RuntimeError(
+                f"Runtime source commit {identity.source_commit} does not match authorized release {authorized}."
+            )
 
 
 def public_runtime_identity_view() -> dict[str, Any]:
