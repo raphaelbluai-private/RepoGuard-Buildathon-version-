@@ -188,6 +188,23 @@ jobs:
       - name: Verify embedded source revision
         run: |
           test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }})" = "${{ env.REPOGUARD_SOURCE_SHA }}"
+      - name: Verify runtime imports and remove package-manager attack surface
+        run: |
+          docker run --rm --entrypoint python repoguard-ci:${{ env.REPOGUARD_SOURCE_SHA }} - <<'PY'
+          from importlib.metadata import PackageNotFoundError, version
+          import fastapi
+          import x402
+          import urllib3
+          import commerce_app_v2
+          assert version("urllib3") == "2.8.0"
+          for package in ("pip", "setuptools", "wheel"):
+              try:
+                  found = version(package)
+              except PackageNotFoundError:
+                  continue
+              raise SystemExit(f"{package} unexpectedly remains in runtime image at {found}")
+          print("runtime import/package-manager smoke PASS")
+          PY
       - name: Capture container provenance
         run: |
           mkdir -p build/release-evidence
