@@ -163,11 +163,13 @@ _PAID_SKU_BY_PATH = {
 }
 
 
-def _transaction_id(request: Request) -> str | None:
+def _transaction_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
     return getattr(request.state, "payment_transaction_id", None)
 
 
-def _begin_fulfillment(request: Request) -> None:
+def _begin_fulfillment(request: Request | None) -> None:
     transaction_id = _transaction_id(request)
     if not transaction_id:
         return
@@ -181,7 +183,7 @@ def _begin_fulfillment(request: Request) -> None:
         transition(transaction_id, FULFILLMENT_STARTED)
 
 
-def _complete_fulfillment(request: Request, payload: dict[str, Any], *, cache_hit: bool | None = None) -> None:
+def _complete_fulfillment(request: Request | None, payload: dict[str, Any], *, cache_hit: bool | None = None) -> None:
     transaction_id = _transaction_id(request)
     if not transaction_id:
         return
@@ -195,7 +197,7 @@ def _complete_fulfillment(request: Request, payload: dict[str, Any], *, cache_hi
         )
 
 
-def _fail_fulfillment(request: Request, code: str, *, retryable: bool) -> None:
+def _fail_fulfillment(request: Request | None, code: str, *, retryable: bool) -> None:
     transaction_id = _transaction_id(request)
     if not transaction_id:
         return
@@ -420,7 +422,7 @@ def _identity(provider: str, repo: str) -> tuple[str, str | None, str]:
         raise HTTPException(status_code=503, detail={"error": "ADAPTER_RUNTIME_ERROR", "message": str(exc)}) from exc
 
 
-def _run_canonical_scan(body: RepoRequest, sku: str, request: Request) -> dict[str, Any]:
+def _run_canonical_scan(body: RepoRequest, sku: str, request: Request | None = None) -> dict[str, Any]:
     _begin_fulfillment(request)
     if not SCAN_CONCURRENCY_GATE.try_acquire():
         _fail_fulfillment(request, "SCAN_CAPACITY_EXHAUSTED", retryable=True)
