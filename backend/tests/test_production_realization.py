@@ -145,3 +145,22 @@ def test_runtime_identity_rejects_authorized_release_drift(monkeypatch):
     monkeypatch.setenv("REPOGUARD_AUTHORIZED_RELEASE_SHA", "b" * 40)
     with pytest.raises(RuntimeError, match="does not match authorized release"):
         runtime_identity.require_runtime_identity()
+
+
+def test_structured_alert_redacts_secret_like_detail(caplog):
+    event = operational_alerts.emit_alert(
+        "REDACTION_TEST",
+        severity="error",
+        component="ops",
+        detail={
+            "safe": "visible",
+            "api_token": "never-log-this",
+            "nested": {"payment_signature": "secret-proof", "reason": "timeout"},
+        },
+    )
+    assert event["detail"]["safe"] == "visible"
+    assert event["detail"]["api_token"] == "[REDACTED]"
+    assert event["detail"]["nested"]["payment_signature"] == "[REDACTED]"
+    serialized = json.dumps(event)
+    assert "never-log-this" not in serialized
+    assert "secret-proof" not in serialized
