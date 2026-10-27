@@ -95,8 +95,7 @@ REPO GUARD
 │   ├── 🟩 `/data` ownership prepared for runtime persistence
 │   ├── 🟩 minimal Python runtime image
 │   ├── 🟩 Git + CA certificates only as required OS additions
-│   ├── 🟨 production container build gate
-│   │   └── must pass on final release candidate
+│   ├── 🟩 production container build gate — exact-head CI #331 verified
 │   ├── 🟥 container/image vulnerability review
 │   └── 🟥 runtime privilege/resource verification on deployed candidate
 │
@@ -189,13 +188,13 @@ REPO GUARD
 │   ├── 🟥 supersession/dispute states
 │   └── 🟥 deterministic governing-record selection
 │
-├── 🟥 REPOSITORY ↔ RUNTIME RECONCILIATION
-│   ├── 🟥 authorized source commit
-│   ├── 🟥 deployed artifact/image digest
-│   ├── 🟥 deployed source identity
-│   ├── 🟥 configuration hash without secrets
-│   ├── 🟥 drift/stale deployment detection
-│   └── 🟥 fail-closed unknown runtime identity
+├── 🟨 REPOSITORY ↔ RUNTIME RECONCILIATION
+│   ├── 🟩 authorized source commit contract + exact-SHA release manifest
+│   ├── 🟨 deployed artifact/image digest — CI image identity proven; Railway deployment pending
+│   ├── 🟨 deployed source identity — OCI/runtime contract built; live Railway reconciliation pending
+│   ├── 🟩 configuration hash without secrets
+│   ├── 🟩 drift/stale deployment detection — authorized-SHA mismatch fails closed
+│   └── 🟩 fail-closed unknown runtime identity option
 │
 ├── 🟨 CI / RELEASE ASSURANCE
 │   ├── 🟩 frontend typecheck
@@ -209,17 +208,17 @@ REPO GUARD
 │   ├── 🟥 required checks enforced by branch protection
 │   └── 🟥 signed/verifiably attributable release process
 │
-├── 🟥 PRODUCTION REALIZATION / OPERATIONS
-│   ├── 🟥 exact release manifest
-│   ├── 🟥 artifact provenance / SBOM or justified equivalent
-│   ├── 🟥 exact Railway deployment identity reconciliation
-│   ├── 🟥 persistent-state restart verification
-│   ├── 🟥 rollback / recovery evidence
-│   ├── 🟥 structured operational alerts
-│   ├── 🟥 operator runbook
-│   ├── 🟥 incident / credential rotation runbook
-│   ├── 🟥 performance budgets and results
-│   └── 🟥 evidence freshness ledger
+├── 🟨 PRODUCTION REALIZATION / OPERATIONS
+│   ├── 🟩 exact release manifest — generated and SHA-verified in CI
+│   ├── 🟩 artifact provenance / justified dependency-inventory equivalent
+│   ├── 🟨 exact Railway deployment identity reconciliation — runtime contract built; live proof pending
+│   ├── 🟩 persistent-state restart verification — cache/payment/telemetry cross-process recovery proven
+│   ├── 🟩 rollback / recovery evidence — recovery contract + runbook
+│   ├── 🟨 structured operational alerts — schema/emission verified; live delivery sink pending
+│   ├── 🟩 operator runbook
+│   ├── 🟩 incident / credential rotation runbook
+│   ├── 🟨 performance budgets and results — budgets codified; live load results pending
+│   └── 🟩 evidence freshness ledger
 │
 ├── 🟥 HOSTILE STAGING / SECURITY ACCEPTANCE
 │   ├── 🟥 malicious provider-host test
@@ -255,7 +254,7 @@ REPO GUARD
     ├── 🟨 G1 launch-scope security hardening — active
     ├── 🟥 hostile staging acceptance
     ├── 🟨 G2 payment operations assurance — engineering GREEN; live Sepolia/facilitator evidence pending
-    ├── 🟥 G3–G4 v1.6 Production Realization evidence
+    ├── 🟨 G3–G4 v1.6 Production Realization — engineering substantially GREEN; live Railway/load/alert evidence pending
     ├── 🟥 G5 live hardened Base Sepolia acceptance
     ├── 🟥 G6 external-agent acceptance
     ├── 🟥 G7 Gates 1–7 evidence package
