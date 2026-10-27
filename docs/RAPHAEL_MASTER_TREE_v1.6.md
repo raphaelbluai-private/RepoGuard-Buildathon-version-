@@ -10,6 +10,8 @@ LEGEND
 🟩 ready / verified
 🟨 partially complete / evidence pending
 🟥 needs building / launch blocker
+⬛ externally blocked / operator or live-platform evidence required
+⏸ deferred / intentionally outside current launch scope
 🟪 legacy / remove
 
 REPO GUARD
@@ -75,19 +77,17 @@ REPO GUARD
 │   ├── 🟩 request field bounds
 │   ├── 🟩 request body size cap
 │   ├── 🟩 wildcard CORS stripped from hardened commerce surface
-│   └── 🟨 production security-header set
-│       └── remaining verification / configuration work
+│   └── 🟩 production security-header set — HSTS, CSP, no-store, clickjacking, MIME, referrer and permissions controls regression-tested
 │
 ├── 🟨 RESOURCE / ABUSE PROTECTION
 │   ├── 🟩 provider Git timeouts
 │   ├── 🟩 extracted-file max size
 │   ├── 🟩 request max size
 │   ├── 🟩 bounded concurrent scan gate
-│   ├── 🟨 application rate limiting
-│   │   └── legacy limiter exists; hardened commerce-specific policy requires launch verification
-│   ├── 🟥 edge/WAF or platform-level abuse policy verification
-│   ├── 🟥 live load/resource test
-│   └── 🟥 circuit-breaker / provider-failure acceptance evidence
+│   ├── 🟩 hardened commerce application rate limiting — per-client/per-route window, 429 + Retry-After
+│   ├── 🟩 provider circuit breaker — repeated provider failures open cooldown and fail closed
+│   ├── ⬛ edge/WAF or platform-level abuse policy verification
+│   └── ⬛ live load/resource test
 │
 ├── 🟨 CONTAINER / RUNTIME SECURITY
 │   ├── 🟩 non-root `repoguard` runtime user
@@ -203,9 +203,10 @@ REPO GUARD
 │   ├── 🟩 correctness lint
 │   ├── 🟩 backend regression suite
 │   ├── 🟩 security regressions included
+│   ├── 🟩 repository full-history secret scan + exact-fixture fingerprint policy
 │   ├── 🟩 production container build + rootfs vulnerability gate exists
-│   ├── 🟥 protected `x402-production` branch
-│   ├── 🟥 required checks enforced by branch protection
+│   ├── ⬛ protected `x402-production` branch — repository administration required
+│   ├── ⬛ required checks enforced by branch protection — repository administration required
 │   └── 🟥 signed/verifiably attributable release process
 │
 ├── 🟨 PRODUCTION REALIZATION / OPERATIONS
@@ -230,7 +231,17 @@ REPO GUARD
 │   ├── 🟩 concurrent overload fail-closed test
 │   ├── 🟩 secret/log-redaction test
 │   ├── 🟩 payment-proof replay/retry simulation — live settlement replay remains under G2/G5
-│   └── 🟩 hostile security gate report — CI #403
+│   └── 🟩 hostile security gate report — refreshed under CI #437
+│
+├── 🟩 RAPHAEL GATES 1–7 EVIDENCE PACKAGE — exact-SHA artifact CI #437
+│   ├── ⬛ Gate 1 Repository Integrity — CI + secret history PASS; branch protection/required checks + public-source disposition blocked
+│   ├── 🟩 Gate 2 Application Attack Surface — PASS
+│   ├── 🟩 Gate 3 Identity/Tenant Isolation — PASS for limited public-preview scope; private multi-tenant scope deferred
+│   ├── ⬛ Gate 4 Secrets/Network Boundaries — application controls PASS; deployed platform egress evidence blocked
+│   ├── ⬛ Gate 5 Supply Chain/Runtime — CI/runtime artifact controls PASS; Railway deployed identity/infrastructure evidence blocked
+│   ├── ⬛ Gate 6 Abuse/Adversarial — concurrency/rate/circuit/hostile PASS; edge/WAF + live load blocked
+│   ├── ⬛ Gate 7 Data/Payment/Recovery — engineering controls PASS; live Sepolia + Railway recovery blocked
+│   └── 🟥 Gate 8 Human Launch Authorization — never self-authorized
 │
 ├── 🟥 REAL USER / EXTERNAL AGENT ACCEPTANCE
 │   ├── 🟥 autonomous discovery
@@ -258,7 +269,7 @@ REPO GUARD
     ├── 🟨 G3–G4 v1.6 Production Realization — engineering substantially GREEN on CI #358; live Railway/load/alert evidence pending
     ├── 🟥 G5 live hardened Base Sepolia acceptance
     ├── 🟥 G6 external-agent acceptance
-    ├── 🟥 G7 Gates 1–7 evidence package
+    ├── 🟩 G7 Gates 1–7 evidence package — exact-SHA machine-readable package CI #437; underlying blocked controls remain explicit
     ├── 🟥 Gate 8 Principal limited-launch authorization
     └── 🟥 G8 continuous full-completion after x402 launch
 ```
