@@ -16,7 +16,7 @@ importers:
     dependencies:
       '@tailwindcss/vite':
         specifier: ^4.2.2
-        version: 4.2.2(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))
+        version: 4.2.2(vite@6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))
       lucide-react:
         specifier: ^1.7.0
         version: 1.7.0(react@19.2.4)
@@ -44,7 +44,7 @@ importers:
         version: 19.2.3(@types/react@19.2.14)
       '@vitejs/plugin-react':
         specifier: ^4.4.1
-        version: 4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))
+        version: 4.7.0(vite@6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))
       react:
         specifier: ^19.1.0
         version: 19.2.4
@@ -52,8 +52,8 @@ importers:
         specifier: ^19.1.0
         version: 19.2.4(react@19.2.4)
       vite:
-        specifier: ^6.3.1
-        version: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
+        specifier: ^6.4.4
+        version: 6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
 
 packages:
 
@@ -817,8 +817,8 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  vite@6.4.2:
-    resolution: {integrity: sha512-2N/55r4JDJ4gdrCvGgINMy+HH3iRpNIz8K6SFwVsA+JbQScLiC+clmAxBgwiSPgcG9U15QmvqCGWzMbqda5zGQ==}
+  vite@6.4.5:
+    resolution: {integrity: sha512-4enwjFfi4IwtEh0w+jPzpLVOFQiPHmmzPxcHXQOyEur47o6u0jE573DmGpjA+7irXoMLYRZD5ZaFUEneS3abPg==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
     hasBin: true
     peerDependencies:
@@ -1225,12 +1225,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.2.2
       '@tailwindcss/oxide-win32-x64-msvc': 4.2.2
 
-  '@tailwindcss/vite@4.2.2(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))':
+  '@tailwindcss/vite@4.2.2(vite@6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))':
     dependencies:
       '@tailwindcss/node': 4.2.2
       '@tailwindcss/oxide': 4.2.2
       tailwindcss: 4.2.2
-      vite: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
+      vite: 6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
 
   '@types/babel__core@7.20.5':
     dependencies:
@@ -1267,7 +1267,7 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@vitejs/plugin-react@4.7.0(vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))':
+  '@vitejs/plugin-react@4.7.0(vite@6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0))':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.0)
@@ -1275,7 +1275,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
+      vite: 6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -1502,7 +1502,7 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  vite@6.4.2(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0):
+  vite@6.4.5(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.4)
