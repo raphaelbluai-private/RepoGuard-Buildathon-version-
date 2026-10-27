@@ -84,8 +84,7 @@ jobs:
           backend/performance_budgets.py
           backend/operational_readiness.py
           backend/release_assurance.py
-          backend/release_assurance.py
-          backend/operational_readiness.py
+          backend/security_gate_evidence.py
       - name: Lint correctness-critical rules
         run: >-
           uv run ruff check --select E4,E7,E9,F
@@ -110,6 +109,9 @@ jobs:
           backend/runtime_identity.py
           backend/operational_alerts.py
           backend/performance_budgets.py
+          backend/operational_readiness.py
+          backend/release_assurance.py
+          backend/security_gate_evidence.py
       - name: Run scanner, API, x402, security and payment-operations suite
         working-directory: backend
         env:
@@ -119,6 +121,58 @@ jobs:
           REPOGUARD_TELEMETRY_DB: /tmp/repoguard-ci-commerce.sqlite3
           REPOGUARD_PAYMENT_DB: /tmp/repoguard-ci-payments.sqlite3
         run: uv run pytest -q tests
+
+  repository-security:
+    name: Repository Security — Secret History Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REPOGUARD_SOURCE_SHA }}
+          fetch-depth: 0
+      - name: Scan repository history for secrets
+        run: |
+          mkdir -p build/release-evidence
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            zricethezav/gitleaks:v8.21.2 detect \
+            --source=/repo \
+            --redact \
+            --no-banner \
+            --report-format=json \
+            --report-path=/repo/build/release-evidence/gitleaks-report.json \
+            --log-opts="--all"
+      - name: Record repository secret-scan evidence
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path("build/release-evidence")
+          report = out / "gitleaks-report.json"
+          findings = []
+          if report.exists() and report.stat().st_size:
+              findings = json.loads(report.read_text())
+          evidence = {
+              "schema": "repoguard.repository-secret-history.v1",
+              "source_commit": os.environ["REPOGUARD_SOURCE_SHA"],
+              "scanner": "gitleaks 8.21.2",
+              "history_scope": "all fetched refs/history",
+              "redacted": True,
+              "finding_count": len(findings),
+              "status": "PASS" if not findings else "FAIL",
+          }
+          (out / "repository-secret-history-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n"
+          )
+          PY
+      - name: Upload repository security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repoguard-repository-security-${{ env.REPOGUARD_SOURCE_SHA }}
+          path: build/release-evidence/
+          retention-days: 30
 
   hostile-staging:
     name: Hostile Staging — Non-Live Security Acceptance
@@ -178,7 +232,7 @@ jobs:
   container:
     name: Production Container — Build & Vulnerability Gate
     runs-on: ubuntu-latest
-    needs: [frontend, backend, hostile-staging]
+    needs: [frontend, backend, repository-security, hostile-staging]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -265,7 +319,7 @@ jobs:
   release-evidence:
     name: Release Evidence — Manifest & Dependency Inventory
     runs-on: ubuntu-latest
-    needs: [frontend, backend, hostile-staging, container]
+    needs: [frontend, backend, repository-security, hostile-staging, container]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -293,6 +347,8 @@ jobs:
           REPOGUARD_RELEASE_BRANCH: ${{ env.REPOGUARD_RELEASE_BRANCH }}
           REPOGUARD_REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
         run: uv run python scripts/generate_release_assurance.py
+      - name: Generate RAPHAEL Security Gates 1-7 evidence
+        run: uv run python scripts/generate_security_gates.py
       - name: Generate machine-readable dependency inventories
         run: |
           uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file build/release-evidence/python-production-requirements.txt
@@ -315,6 +371,14 @@ jobs:
           assert assurance["branch"] == "x402-production"
           assert assurance["source_sha"] == os.environ["REPOGUARD_SOURCE_SHA"]
           assert assurance["release_authorized"] is False
+          gates = json.loads(Path("build/release-evidence/raphael-security-gates-1-7.json").read_text())
+          assert gates["source_commit"] == os.environ["REPOGUARD_SOURCE_SHA"]
+          assert gates["package_complete"] is True
+          assert gates["gate8_authorized"] is False
+          assert gates["all_gates_pass"] is False
+          gate_status = {item["gate"]: item["status"] for item in gates["gates"]}
+          assert gate_status[2] == "PASS"
+          assert gate_status[3] == "PASS"
           PY
       - name: Upload release evidence
         uses: actions/upload-artifact@v4
