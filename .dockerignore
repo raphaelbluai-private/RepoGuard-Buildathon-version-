@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+**/*.sqlite3
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+node_modules
+artifacts/repoguard/node_modules
+artifacts/repoguard/dist
+attached_assets

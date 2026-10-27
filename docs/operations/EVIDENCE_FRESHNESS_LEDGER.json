@@ -1,0 +1,53 @@
+{
+  "schema": "repoguard.evidence-freshness-ledger.v1",
+  "rules": [
+    {
+      "evidence": "exact_head_ci",
+      "max_age_hours": 24,
+      "refresh_trigger": "any source, dependency, workflow, Dockerfile, or runtime-contract change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "dependency_security_audit",
+      "max_age_hours": 24,
+      "refresh_trigger": "any dependency or lockfile change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "container_provenance",
+      "max_age_hours": 24,
+      "refresh_trigger": "any Dockerfile, dependency, or source change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "runtime_identity_reconciliation",
+      "max_age_hours": 1,
+      "refresh_trigger": "every deployment or restart",
+      "required_for_release": true
+    },
+    {
+      "evidence": "persistent_state_restart",
+      "max_age_hours": 168,
+      "refresh_trigger": "storage path, persistence schema, container, or platform-volume change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "facilitator_qualification",
+      "max_age_hours": 168,
+      "refresh_trigger": "facilitator, SDK, network, settlement contract, or rate-limit change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "live_base_sepolia_acceptance",
+      "max_age_hours": 24,
+      "refresh_trigger": "payment code, facilitator, wallet, network, deployment, or release-candidate change",
+      "required_for_release": true
+    },
+    {
+      "evidence": "hostile_staging_acceptance",
+      "max_age_hours": 168,
+      "refresh_trigger": "security boundary, provider acquisition, deployment platform, or dependency change",
+      "required_for_release": true
+    }
+  ]
+}
