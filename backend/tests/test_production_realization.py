@@ -136,3 +136,11 @@ def test_performance_budget_evaluator_pass_and_fail():
     failing = performance_budgets.evaluate("verify", [1000, 2000, 4000, 5000, 6000])
     assert passing["passes"] is True
     assert failing["passes"] is False
+
+
+def test_runtime_identity_rejects_authorized_release_drift(monkeypatch):
+    monkeypatch.setenv("REPOGUARD_RELEASE_SHA", "a" * 40)
+    monkeypatch.setenv("RAILWAY_DEPLOYMENT_ID", "deployment-1")
+    monkeypatch.setenv("REPOGUARD_AUTHORIZED_RELEASE_SHA", "b" * 40)
+    with pytest.raises(RuntimeError, match="does not match authorized release"):
+        runtime_identity.require_runtime_identity()
