@@ -37,8 +37,8 @@ def git(args: list[str]) -> str:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    commit = os.getenv("GITHUB_SHA") or git(["rev-parse", "HEAD"])
-    branch = os.getenv("GITHUB_REF_NAME") or git(["rev-parse", "--abbrev-ref", "HEAD"])
+    commit = os.getenv("REPOGUARD_SOURCE_SHA") or os.getenv("GITHUB_SHA") or git(["rev-parse", "HEAD"])
+    branch = os.getenv("REPOGUARD_RELEASE_BRANCH") or os.getenv("GITHUB_REF_NAME") or git(["rev-parse", "--abbrev-ref", "HEAD"])
     files = {
         rel: sha256_file(ROOT / rel)
         for rel in TRACKED
