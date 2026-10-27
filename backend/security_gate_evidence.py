@@ -84,10 +84,11 @@ def evaluate_gates(*, source_sha: str, ci_run_id: str | None = None) -> dict[str
         ]),
         _gate(6, "Abuse and Adversarial Testing", [
             Control("G6-CONCURRENCY", PASS, "Bounded concurrent scan gate fails closed under saturation."),
+            Control("G6-RATE", PASS, "Hardened commerce POST routes enforce an in-process per-client/per-route request window with 429 and Retry-After."),
             Control("G6-HOSTILE", PASS, "Dedicated non-live hostile-staging suite covers SSRF, redirect, credential, size, overload, redaction and replay simulation."),
             Control("G6-EDGE", BLOCKED, "Application controls are proven.", "Edge/WAF/platform abuse policy requires deployment-provider verification."),
             Control("G6-LOAD", BLOCKED, "Performance budgets exist.", "Live load/resource acceptance remains deferred until deployed candidate testing."),
-            Control("G6-CIRCUIT", PARTIAL, "Provider requests use bounded timeouts and provider failures fail closed.", "Explicit provider circuit-breaker acceptance evidence is not yet complete."),
+            Control("G6-CIRCUIT", PASS, "Repeated provider timeout/runtime failures open a cooldown circuit and fail closed with Retry-After; recovery behavior is regression-tested."),
         ]),
         _gate(7, "Data / Payment / Recovery", [
             Control("G7-REDACTION", PASS, "Structured operational evidence redacts secret material recursively."),
