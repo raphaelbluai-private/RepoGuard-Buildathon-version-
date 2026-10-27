@@ -128,6 +128,6 @@ After payment presentation, facilitator identity is frozen for the transaction. 
 
 ## Status
 
-**Engineering:** YELLOW pending exact-head CI.  
-**Live payment operations:** RED pending Base Sepolia and facilitator evidence.  
+**Engineering:** GREEN on code SHA `025e99e657d140b82a1b841d639221b71522afc8` via GitHub Actions run `40433899313` / CI #285 (frontend audit/typecheck/build PASS; backend audit/compile/lint PASS; 124 tests PASS; production container build PASS).  
+**Live payment operations:** RED pending real Base Sepolia settlement, live idempotency/replay/reconciliation drills, facilitator reliability/limit evidence, and persistent-state restart proof.  
 **Mainnet:** BLOCKED pending live acceptance and Principal authorization.
