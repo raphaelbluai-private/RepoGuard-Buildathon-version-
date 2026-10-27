@@ -30,11 +30,15 @@ from payment_operations import (
     begin_transaction,
     bind_presented_payment,
     canonical_request_hash,
+    current_transaction_id,
     decode_settlement_header,
     get_by_idempotency,
     get_transaction,
     issue_receipt,
     payment_proof_digest,
+    record_control_event,
+    reset_current_transaction,
+    set_current_transaction,
     transition,
 )
 from launch_security import (
@@ -294,7 +298,11 @@ class PaymentOperationsBoundary(BaseHTTPMiddleware):
                     content={"error": exc.code, "transaction_id": exc.transaction_id},
                 )
 
-        response = await call_next(request)
+        context_token = set_current_transaction(transaction_id)
+        try:
+            response = await call_next(request)
+        finally:
+            reset_current_transaction(context_token)
 
         if not proof_digest and response.status_code == 402:
             try:
@@ -706,10 +714,97 @@ def attest_scan(body: RepoRequest, request: Request):
     return payload
 
 
+async def _x402_after_verify(context) -> None:
+    transaction_id = current_transaction_id()
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx and tx.state == PRESENTED:
+        transition(transaction_id, VERIFIED)
+
+
+async def _x402_verify_failure(context) -> None:
+    transaction_id = current_transaction_id()
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx and tx.state == PRESENTED:
+        transition(
+            transaction_id,
+            VERIFICATION_REJECTED,
+            failure_code="PAYMENT_VERIFICATION_REJECTED",
+            retryable=False,
+        )
+
+
+async def _x402_before_settle(context) -> None:
+    transaction_id = current_transaction_id()
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if tx and tx.state == FULFILLED:
+        transition(transaction_id, SETTLEMENT_PENDING)
+
+
+async def _x402_after_settle(context) -> None:
+    transaction_id = current_transaction_id()
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if not tx or tx.state != SETTLEMENT_PENDING:
+        return
+    result = getattr(context, "result", None)
+    transaction_hash = getattr(result, "transaction", None) or getattr(result, "transaction_hash", None)
+    tx = transition(
+        transaction_id,
+        SETTLED,
+        transaction_hash=str(transaction_hash) if transaction_hash else None,
+        retryable=False,
+    )
+    tx = issue_receipt(transaction_id)
+    record_event(
+        "payment_receipt_issued",
+        status_code=200,
+        network=X402_NETWORK,
+        transaction_hash=tx.transaction_hash,
+        cache_hit=tx.cache_hit,
+        detail={"sku": tx.sku, "transaction_id": transaction_id, "receipt_id": tx.receipt_id},
+    )
+
+
+async def _x402_settle_failure(context) -> None:
+    transaction_id = current_transaction_id()
+    if not transaction_id:
+        return
+    tx = get_transaction(transaction_id)
+    if not tx or tx.state != SETTLEMENT_PENDING:
+        return
+    error = getattr(context, "error", None) or getattr(context, "exception", None)
+    message = str(error or "settlement failure")
+    if "timeout" in message.lower():
+        record_control_event(
+            "settlement_timeout_indeterminate",
+            transaction_id=transaction_id,
+            detail={"message": message[:256]},
+        )
+        return
+    transition(
+        transaction_id,
+        SETTLEMENT_FAILED_RETRIABLE,
+        failure_code="FACILITATOR_SETTLEMENT_FAILED",
+        retryable=True,
+    )
+
+
 if X402_PAY_TO:
     facilitator = HTTPFacilitatorClient(FacilitatorConfig(url=X402_FACILITATOR_URL))
     x402_server = x402ResourceServer(facilitator)
     x402_server.register(X402_NETWORK, ExactEvmServerScheme())
+    x402_server.on_after_verify(_x402_after_verify)
+    x402_server.on_verify_failure(_x402_verify_failure)
+    x402_server.on_before_settle(_x402_before_settle)
+    x402_server.on_after_settle(_x402_after_settle)
+    x402_server.on_settle_failure(_x402_settle_failure)
 
     paid_routes: dict[str, RouteConfig] = {}
     for product in PRODUCTS.values():
