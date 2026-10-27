@@ -57,6 +57,7 @@ record_event("restart_probe", status_code=200)
     output = _run_backend(
         """
 import json
+import os
 from persistent_scan_cache import get
 from payment_operations import get_by_idempotency
 import sqlite3
