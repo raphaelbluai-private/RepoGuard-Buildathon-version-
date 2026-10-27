@@ -65,6 +65,7 @@ jobs:
           backend/commerce_telemetry.py
           backend/payment_operations.py
           backend/facilitator_assurance.py
+          backend/release_identity.py
           backend/persistent_scan_cache.py
           backend/runtime_identity.py
           backend/operational_alerts.py
