@@ -175,16 +175,24 @@ jobs:
       - name: Verify embedded source revision
         run: |
           test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ github.sha }})" = "${{ github.sha }}"
-      - name: Scan production image for HIGH/CRITICAL vulnerabilities
-        run: |
-          mkdir -p build/release-evidence
-          docker run --rm             -v /var/run/docker.sock:/var/run/docker.sock             -v "${{ github.workspace }}/build/release-evidence:/evidence"             aquasec/trivy:0.58.2 image             --exit-code 1             --ignore-unfixed             --severity HIGH,CRITICAL             --format json             --output /evidence/container-vulnerability-report.json             repoguard-ci:${{ github.sha }}
       - name: Capture container provenance
         run: |
           mkdir -p build/release-evidence
           docker image inspect repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-inspect.json
           docker image inspect --format='{{.Id}}' repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-id.txt
-      - name: Upload container provenance
+      - name: Scan production image for HIGH/CRITICAL vulnerabilities
+        run: |
+          set -o pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.2 image \
+            --exit-code 1 \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --format table \
+            repoguard-ci:${{ github.sha }} | tee build/release-evidence/container-vulnerability-report.txt
+      - name: Upload container security/provenance evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: repoguard-container-provenance-${{ github.sha }}
