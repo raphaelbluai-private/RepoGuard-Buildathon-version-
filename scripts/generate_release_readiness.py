@@ -16,12 +16,12 @@ CI_PROVABLE = {
     "dependency_security_audit",
     "container_provenance",
     "persistent_state_restart",
+    "hostile_staging_acceptance",
 }
 LIVE_ONLY = {
     "runtime_identity_reconciliation",
     "facilitator_qualification",
     "live_base_sepolia_acceptance",
-    "hostile_staging_acceptance",
 }
 
 
@@ -49,7 +49,7 @@ def main() -> None:
     report = {
         "schema": "repoguard.release-readiness-evidence.v1",
         "generated_at": now.isoformat(),
-        "source_commit": os.getenv("GITHUB_SHA"),
+        "source_commit": os.getenv("REPOGUARD_SOURCE_SHA") or os.getenv("GITHUB_SHA"),
         "ci_run_id": os.getenv("GITHUB_RUN_ID"),
         "release_authorized": False,
         "engineering_evidence_current": all(
