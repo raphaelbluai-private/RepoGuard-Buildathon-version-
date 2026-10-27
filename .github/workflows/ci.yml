@@ -139,33 +139,12 @@ jobs:
             --source=/repo \
             --redact \
             --no-banner \
+            --exit-code=0 \
             --report-format=json \
             --report-path=/repo/build/release-evidence/gitleaks-report.json \
             --log-opts="--all"
-      - name: Record repository secret-scan evidence
-        if: always()
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          out = Path("build/release-evidence")
-          report = out / "gitleaks-report.json"
-          findings = []
-          if report.exists() and report.stat().st_size:
-              findings = json.loads(report.read_text())
-          evidence = {
-              "schema": "repoguard.repository-secret-history.v1",
-              "source_commit": os.environ["REPOGUARD_SOURCE_SHA"],
-              "scanner": "gitleaks 8.21.2",
-              "history_scope": "all fetched refs/history",
-              "redacted": True,
-              "finding_count": len(findings),
-              "status": "PASS" if not findings else "FAIL",
-          }
-          (out / "repository-secret-history-evidence.json").write_text(
-              json.dumps(evidence, indent=2, sort_keys=True) + "\n"
-          )
-          PY
+      - name: Enforce exact-fingerprint secret-history policy
+        run: python scripts/check_gitleaks_report.py
       - name: Upload repository security evidence
         if: always()
         uses: actions/upload-artifact@v4
