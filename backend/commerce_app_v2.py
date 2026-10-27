@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
+from operational_alerts import emit_alert
+from runtime_identity import require_runtime_identity, runtime_identity_view
 from payment_operations import (
     CHALLENGED,
     FULFILLED,
@@ -64,6 +66,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 app = FastAPI(title="RepoGuard Agent Commerce API", version="2.2.0")
+
+
+@app.on_event("startup")
+def validate_runtime_identity_on_startup() -> None:
+    require_runtime_identity()
 
 X402_NETWORK = os.environ.get("REPOGUARD_X402_NETWORK", getattr(legacy, "X402_NETWORK", "eip155:84532"))
 X402_PAY_TO = os.environ.get("REPOGUARD_PAY_TO")
@@ -148,6 +155,8 @@ def v1_health():
         "public_preview_only": is_public_preview_only(),
         "x402_configured": bool(X402_PAY_TO),
         "max_concurrent_scans": MAX_CONCURRENT_SCANS,
+        "runtime_identity": runtime_identity_view(),
+        "persistent_cache": persistent_cache_stats(),
     }
 
 
@@ -428,6 +437,13 @@ def _run_canonical_scan(body: RepoRequest, sku: str, request: Request | None = N
     _begin_fulfillment(request)
     if not SCAN_CONCURRENCY_GATE.try_acquire():
         _fail_fulfillment(request, "SCAN_CAPACITY_EXHAUSTED", retryable=True)
+        emit_alert(
+            "SCAN_CAPACITY_EXHAUSTED",
+            severity="WARNING",
+            component="scanner",
+            transaction_id=_transaction_id(request),
+            retryable=True,
+        )
         raise HTTPException(
             status_code=503,
             detail={
@@ -443,6 +459,14 @@ def _run_canonical_scan(body: RepoRequest, sku: str, request: Request | None = N
         raise
     except Exception as exc:
         _fail_fulfillment(request, type(exc).__name__, retryable=True)
+        emit_alert(
+            "SCAN_EXECUTION_EXCEPTION",
+            severity="ERROR",
+            component="scanner",
+            transaction_id=_transaction_id(request),
+            retryable=True,
+            detail={"exception_type": type(exc).__name__},
+        )
         raise
     finally:
         SCAN_CONCURRENCY_GATE.release()
