@@ -9,6 +9,19 @@ import uuid
 from typing import Any
 
 _LOG = logging.getLogger("repoguard.ops")
+_SECRET_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "SIGNATURE", "AUTHORIZATION", "PRIVATE_KEY", "API_KEY")
+
+
+def _redact(value: Any, key: str | None = None) -> Any:
+    if key and any(marker in key.upper() for marker in _SECRET_MARKERS):
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {str(k): _redact(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    if isinstance(value, tuple):
+        return [_redact(v) for v in value]
+    return value
 
 
 def emit_alert(
@@ -32,7 +45,7 @@ def emit_alert(
         "occurred_at_ms": int(time.time() * 1000),
         "transaction_id": transaction_id,
         "retryable": retryable,
-        "detail": detail or {},
+        "detail": _redact(detail or {}),
     }
     message = json.dumps(event, sort_keys=True, separators=(",", ":"))
     getattr(_LOG, normalized.lower())(message)
