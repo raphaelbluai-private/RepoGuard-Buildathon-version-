@@ -1,21 +1,20 @@
-name: Controlled Lock Repair
+name: CI
 
 on:
   push:
-    branches: [x402-production]
+    branches: [demo, x402-production, main, master]
+  pull_request:
+    branches: [demo, x402-production, main, master]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  repair-locks:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/x402-production'
+  frontend:
+    name: Frontend — Type Check, Audit & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: x402-production
-          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -23,21 +22,84 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit production and development dependencies
+        run: pnpm audit --audit-level high
+      - name: Type check
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+
+  backend:
+    name: Backend — Security, Regression, Contract & Payment Operations Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
-      - name: Regenerate exact lockfiles
-        run: |
-          pnpm install --no-frozen-lockfile
-          uv lock
-      - name: Commit only regenerated locks
-        run: |
-          if git diff --quiet -- pnpm-lock.yaml uv.lock; then
-            echo "Lockfiles already current."
-            exit 0
-          fi
-          git config user.name "RepoGuard CI"
-          git config user.email "actions@users.noreply.github.com"
-          git add pnpm-lock.yaml uv.lock
-          git commit -m "chore(ci): refresh security dependency lockfiles [skip ci]"
-          git push origin HEAD:x402-production
+      - name: Install dependencies from committed lock
+        run: uv sync --group dev --frozen
+      - name: Export locked production dependencies
+        run: uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file /tmp/repoguard-production-requirements.txt
+      - name: Audit locked Python dependencies
+        run: uvx pip-audit==2.10.1 -r /tmp/repoguard-production-requirements.txt --no-deps
+      - name: Compile production modules
+        run: >-
+          uv run python -m py_compile
+          backend/app.py
+          backend/run.py
+          backend/scanner.py
+          backend/provider_scanner.py
+          backend/source_adapters.py
+          backend/provider_credentials.py
+          backend/launch_security.py
+          backend/commercial.py
+          backend/commercial_app.py
+          backend/commerce_app_v2.py
+          backend/commerce_contracts.py
+          backend/product_catalog.py
+          backend/provenance.py
+          backend/x402_payments.py
+          backend/commerce_telemetry.py
+          backend/payment_operations.py
+          backend/facilitator_assurance.py
+      - name: Lint correctness-critical rules
+        run: >-
+          uv run ruff check --select E4,E7,E9,F
+          backend/app.py
+          backend/run.py
+          backend/scanner.py
+          backend/provider_scanner.py
+          backend/source_adapters.py
+          backend/provider_credentials.py
+          backend/launch_security.py
+          backend/commercial.py
+          backend/commercial_app.py
+          backend/commerce_app_v2.py
+          backend/commerce_contracts.py
+          backend/product_catalog.py
+          backend/provenance.py
+          backend/x402_payments.py
+          backend/commerce_telemetry.py
+          backend/payment_operations.py
+          backend/facilitator_assurance.py
+      - name: Run scanner, API, x402, security and payment-operations suite
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          REPOGUARD_INTERNAL: "1"
+          REPOGUARD_CACHE_DB: /tmp/repoguard-ci-cache.sqlite3
+          REPOGUARD_TELEMETRY_DB: /tmp/repoguard-ci-commerce.sqlite3
+          REPOGUARD_PAYMENT_DB: /tmp/repoguard-ci-payments.sqlite3
+        run: uv run pytest -q tests
+
+  container:
+    name: Production Container — Build Gate
+    runs-on: ubuntu-latest
+    needs: [frontend, backend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag repoguard-ci:${{ github.sha }} .
