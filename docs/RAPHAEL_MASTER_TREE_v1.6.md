@@ -214,11 +214,12 @@ REPO GUARD
 │   ├── 🟨 exact Railway deployment identity reconciliation — runtime contract built; live proof pending
 │   ├── 🟩 persistent-state restart verification — cache/payment/telemetry cross-process recovery proven
 │   ├── 🟩 rollback / recovery evidence — recovery contract + runbook
-│   ├── 🟨 structured operational alerts — schema/emission verified; live delivery sink pending
+│   ├── 🟨 structured operational alerts — schema/emission + recursive secret redaction verified; live delivery sink pending
 │   ├── 🟩 operator runbook
 │   ├── 🟩 incident / credential rotation runbook
 │   ├── 🟨 performance budgets and results — budgets codified; live load results pending
-│   └── 🟩 evidence freshness ledger
+│   ├── 🟩 evidence freshness ledger
+│   └── 🟩 machine-readable release readiness evidence — CI #358 verified
 │
 ├── 🟥 HOSTILE STAGING / SECURITY ACCEPTANCE
 │   ├── 🟥 malicious provider-host test
@@ -254,7 +255,7 @@ REPO GUARD
     ├── 🟨 G1 launch-scope security hardening — active
     ├── 🟥 hostile staging acceptance
     ├── 🟨 G2 payment operations assurance — engineering GREEN; live Sepolia/facilitator evidence pending
-    ├── 🟨 G3–G4 v1.6 Production Realization — engineering substantially GREEN; live Railway/load/alert evidence pending
+    ├── 🟨 G3–G4 v1.6 Production Realization — engineering substantially GREEN on CI #358; live Railway/load/alert evidence pending
     ├── 🟥 G5 live hardened Base Sepolia acceptance
     ├── 🟥 G6 external-agent acceptance
     ├── 🟥 G7 Gates 1–7 evidence package
