@@ -95,8 +95,8 @@ REPO GUARD
 │   ├── 🟩 `/data` ownership prepared for runtime persistence
 │   ├── 🟩 minimal Python runtime image
 │   ├── 🟩 Git + CA certificates only as required OS additions
-│   ├── 🟩 production container build gate — exact-head CI #331 verified
-│   ├── 🟥 container/image vulnerability review
+│   ├── 🟩 production container build + actual-rootfs vulnerability gate — exact-head CI #403 verified
+│   ├── 🟩 container/image vulnerability review — final runtime rootfs has no eligible HIGH/CRITICAL fixed findings on CI #403
 │   └── 🟥 runtime privilege/resource verification on deployed candidate
 │
 ├── 🟩 AGENT COMMERCE API
@@ -203,7 +203,7 @@ REPO GUARD
 │   ├── 🟩 correctness lint
 │   ├── 🟩 backend regression suite
 │   ├── 🟩 security regressions included
-│   ├── 🟩 production container build gate exists
+│   ├── 🟩 production container build + rootfs vulnerability gate exists
 │   ├── 🟥 protected `x402-production` branch
 │   ├── 🟥 required checks enforced by branch protection
 │   └── 🟥 signed/verifiably attributable release process
@@ -221,16 +221,16 @@ REPO GUARD
 │   ├── 🟩 evidence freshness ledger
 │   └── 🟩 machine-readable release readiness evidence — CI #358 verified
 │
-├── 🟥 HOSTILE STAGING / SECURITY ACCEPTANCE
-│   ├── 🟥 malicious provider-host test
-│   ├── 🟥 localhost/private/metadata SSRF test
-│   ├── 🟥 redirect/destination-change test
-│   ├── 🟥 credential leak test
-│   ├── 🟥 oversized request/repository test
-│   ├── 🟥 concurrent overload test
-│   ├── 🟥 secret/log-redaction test
-│   ├── 🟥 payment replay/retry test
-│   └── 🟥 hostile security gate report
+├── 🟩 HOSTILE STAGING / SECURITY ACCEPTANCE — NON-LIVE ENGINEERING
+│   ├── 🟩 malicious provider-host test
+│   ├── 🟩 localhost/private/metadata SSRF test
+│   ├── 🟩 redirect/destination-change test
+│   ├── 🟩 credential transport/leak containment test
+│   ├── 🟩 oversized request rejection test
+│   ├── 🟩 concurrent overload fail-closed test
+│   ├── 🟩 secret/log-redaction test
+│   ├── 🟩 payment-proof replay/retry simulation — live settlement replay remains under G2/G5
+│   └── 🟩 hostile security gate report — CI #403
 │
 ├── 🟥 REAL USER / EXTERNAL AGENT ACCEPTANCE
 │   ├── 🟥 autonomous discovery
@@ -253,7 +253,7 @@ REPO GUARD
 └── CURRENT CRITICAL PATH
     ├── 🟨 G0 canonical reconciliation — substantially complete
     ├── 🟨 G1 launch-scope security hardening — active
-    ├── 🟥 hostile staging acceptance
+    ├── 🟩 hostile staging acceptance — non-live engineering CI #403; live payment-network acceptance remains deferred
     ├── 🟨 G2 payment operations assurance — engineering GREEN; live Sepolia/facilitator evidence pending
     ├── 🟨 G3–G4 v1.6 Production Realization — engineering substantially GREEN on CI #358; live Railway/load/alert evidence pending
     ├── 🟥 G5 live hardened Base Sepolia acceptance
