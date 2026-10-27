@@ -109,10 +109,63 @@ jobs:
           REPOGUARD_PAYMENT_DB: /tmp/repoguard-ci-payments.sqlite3
         run: uv run pytest -q tests
 
-  container:
-    name: Production Container — Build Gate
+  hostile-staging:
+    name: Hostile Staging — Non-Live Security Acceptance
     runs-on: ubuntu-latest
-    needs: [frontend, backend]
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies from committed lock
+        run: uv sync --group dev --frozen
+      - name: Run adversarial acceptance suite
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          REPOGUARD_INTERNAL: "1"
+          REPOGUARD_CACHE_DB: /tmp/repoguard-hostile-cache.sqlite3
+          REPOGUARD_TELEMETRY_DB: /tmp/repoguard-hostile-commerce.sqlite3
+          REPOGUARD_PAYMENT_DB: /tmp/repoguard-hostile-payments.sqlite3
+        run: |
+          mkdir -p ../build/release-evidence
+          uv run pytest -q tests/test_hostile_staging.py --junitxml=../build/release-evidence/hostile-staging-junit.xml
+      - name: Write hostile staging gate report
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          out = Path("build/release-evidence")
+          report = {
+              "schema": "repoguard.hostile-staging-report.v1",
+              "source_commit": os.environ["GITHUB_SHA"],
+              "payment_network_used": False,
+              "scope": [
+                  "malicious_provider_host",
+                  "private_metadata_ssrf",
+                  "redirect_destination_change",
+                  "credential_exfiltration",
+                  "oversized_request",
+                  "concurrent_overload",
+                  "secret_log_redaction",
+                  "payment_proof_replay_simulation",
+              ],
+              "status": "PASS",
+              "live_payment_replay_acceptance_required": True,
+          }
+          (out / "hostile-staging-report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repoguard-hostile-staging-${{ github.sha }}
+          path: build/release-evidence/hostile-staging-*
+          retention-days: 30
+
+  container:
+    name: Production Container — Build & Vulnerability Gate
+    runs-on: ubuntu-latest
+    needs: [frontend, backend, hostile-staging]
     steps:
       - uses: actions/checkout@v4
       - name: Build production image
@@ -120,6 +173,10 @@ jobs:
       - name: Verify embedded source revision
         run: |
           test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ github.sha }})" = "${{ github.sha }}"
+      - name: Scan production image for HIGH/CRITICAL vulnerabilities
+        run: |
+          mkdir -p build/release-evidence
+          docker run --rm             -v /var/run/docker.sock:/var/run/docker.sock             -v "${{ github.workspace }}/build/release-evidence:/evidence"             aquasec/trivy:0.58.2 image             --exit-code 1             --ignore-unfixed             --severity HIGH,CRITICAL             --format json             --output /evidence/container-vulnerability-report.json             repoguard-ci:${{ github.sha }}
       - name: Capture container provenance
         run: |
           mkdir -p build/release-evidence
@@ -135,7 +192,7 @@ jobs:
   release-evidence:
     name: Release Evidence — Manifest & Dependency Inventory
     runs-on: ubuntu-latest
-    needs: [frontend, backend, container]
+    needs: [frontend, backend, hostile-staging, container]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
