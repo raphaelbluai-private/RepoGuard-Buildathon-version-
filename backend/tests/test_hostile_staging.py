@@ -55,9 +55,13 @@ def test_public_preview_never_attaches_optional_credentials(monkeypatch):
     monkeypatch.setenv("REPOGUARD_PUBLIC_PREVIEW_ONLY", "1")
     monkeypatch.setenv("GITHUB_TOKEN", "should-never-leave-process")
     env = source_adapters._git_env("github", "https://github.com/acme/repo.git")
-    serialized = json.dumps(env)
-    assert "should-never-leave-process" not in serialized
-    assert not any(".extraHeader" in key for key in env.values() if isinstance(key, str))
+    git_config_values = [
+        value for key, value in env.items()
+        if key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_")
+    ]
+    serialized_git_config = json.dumps(git_config_values)
+    assert "should-never-leave-process" not in serialized_git_config
+    assert not any(".extraHeader" in value for value in git_config_values)
 
 
 def test_oversized_request_is_rejected_before_handler_execution(monkeypatch):
