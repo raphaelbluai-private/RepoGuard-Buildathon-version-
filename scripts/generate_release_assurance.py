@@ -18,7 +18,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     report = release_assurance(
         branch=os.getenv("REPOGUARD_RELEASE_BRANCH", ""),
-        source_sha=os.getenv("GITHUB_SHA", ""),
+        source_sha=os.getenv("REPOGUARD_SOURCE_SHA") or os.getenv("GITHUB_SHA", ""),
         repository_visibility=os.getenv("REPOGUARD_REPOSITORY_VISIBILITY", "unknown"),
     )
     (OUT / "release-assurance.json").write_text(
