@@ -89,3 +89,12 @@ def require_runtime_identity() -> None:
         raise RuntimeError(
             "Runtime identity is required but source commit plus deployment/image identity are unavailable."
         )
+
+
+def public_runtime_identity_view() -> dict[str, Any]:
+    identity = runtime_identity()
+    return {
+        "source_commit": identity.source_commit,
+        "config_hash": identity.config_hash,
+        "identity_complete": identity.identity_complete,
+    }
