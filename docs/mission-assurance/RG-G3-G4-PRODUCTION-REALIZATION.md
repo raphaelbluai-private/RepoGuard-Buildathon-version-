@@ -77,3 +77,22 @@ Result:
 **Engineering status:** GREEN for internally verifiable G3–G4 controls.
 
 **Live/platform status:** YELLOW/RED where Railway deployment identity, platform volume restart, live alert delivery, live performance/load, edge abuse controls, or payment-network evidence is required.
+
+
+## Current exact-head validation
+
+Validated SHA: `f2c819eb6df7b093b487a064ae6910711c52af15`
+
+GitHub Actions: `40439106004` / CI #358
+
+- frontend dependency audit/typecheck/build: PASS
+- Python dependency audit/compile/lint: PASS
+- backend regression/security/payment/production-realization suite: 142 PASS
+- production container build + OCI source revision + provenance artifact: PASS
+- exact-SHA release manifest + dependency inventories: PASS
+- machine-readable release readiness evidence: PASS
+- operational readiness evaluator: PASS
+- structured alert recursive secret redaction: PASS
+- superseded push/PR CI run deduplication: ACTIVE
+
+Engineering evidence is current for this SHA. Live/platform evidence remains separately required and this record does not authorize production launch.
