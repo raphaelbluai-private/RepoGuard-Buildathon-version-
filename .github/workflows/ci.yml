@@ -65,6 +65,10 @@ jobs:
           backend/commerce_telemetry.py
           backend/payment_operations.py
           backend/facilitator_assurance.py
+          backend/persistent_scan_cache.py
+          backend/runtime_identity.py
+          backend/operational_alerts.py
+          backend/performance_budgets.py
       - name: Lint correctness-critical rules
         run: >-
           uv run ruff check --select E4,E7,E9,F
@@ -85,6 +89,10 @@ jobs:
           backend/commerce_telemetry.py
           backend/payment_operations.py
           backend/facilitator_assurance.py
+          backend/persistent_scan_cache.py
+          backend/runtime_identity.py
+          backend/operational_alerts.py
+          backend/performance_budgets.py
       - name: Run scanner, API, x402, security and payment-operations suite
         working-directory: backend
         env:
@@ -102,4 +110,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build production image
-        run: docker build --tag repoguard-ci:${{ github.sha }} .
+        run: docker build --build-arg REPOGUARD_BUILD_SHA=${{ github.sha }} --tag repoguard-ci:${{ github.sha }} .
+      - name: Verify embedded source revision
+        run: |
+          test "$(docker image inspect --format='{{ index .Config.Labels "org.opencontainers.image.revision" }}' repoguard-ci:${{ github.sha }})" = "${{ github.sha }}"
+      - name: Capture container provenance
+        run: |
+          mkdir -p build/release-evidence
+          docker image inspect repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-inspect.json
+          docker image inspect --format='{{.Id}}' repoguard-ci:${{ github.sha }} > build/release-evidence/container-image-id.txt
+      - name: Upload container provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: repoguard-container-provenance-${{ github.sha }}
+          path: build/release-evidence/
+          retention-days: 30
+
+  release-evidence:
+    name: Release Evidence — Manifest & Dependency Inventory
+    runs-on: ubuntu-latest
+    needs: [frontend, backend, container]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Install from committed locks
+        run: |
+          pnpm install --frozen-lockfile
+          uv sync --group dev --frozen
+      - name: Generate exact-SHA release manifest
+        run: uv run python scripts/generate_release_evidence.py
+      - name: Generate machine-readable dependency inventories
+        run: |
+          uv export --frozen --no-dev --format requirements-txt --no-hashes --output-file build/release-evidence/python-production-requirements.txt
+          pnpm list --json --prod --depth Infinity > build/release-evidence/node-production-dependencies.json
+      - name: Verify manifest identity
+        run: |
+          uv run python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = json.loads(Path("build/release-evidence/release-manifest.json").read_text())
+          assert p["source_commit"] == os.environ["GITHUB_SHA"]
+          assert p["dirty"] is False
+          assert p["runtime_identity_required_for_authorized_release"] is True
+          PY
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: repoguard-release-evidence-${{ github.sha }}
+          path: build/release-evidence/
+          retention-days: 30
