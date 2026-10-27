@@ -32,11 +32,14 @@ class RuntimeIdentity:
 
 
 def _source_commit() -> str | None:
-    return (
+    value = (
         os.getenv("REPOGUARD_RELEASE_SHA")
         or os.getenv("RAILWAY_GIT_COMMIT_SHA")
         or os.getenv("GITHUB_SHA")
     )
+    if not value or value.strip().lower() in {"unknown", "unset", "none"}:
+        return None
+    return value.strip()
 
 
 def safe_configuration() -> dict[str, str]:
