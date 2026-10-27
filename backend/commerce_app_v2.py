@@ -14,6 +14,7 @@ import app as legacy
 from commerce_contracts import provider_capabilities, remediation_view, safe_to_ship_view
 from commerce_telemetry import record_event
 from operational_alerts import emit_alert
+from operational_readiness import operational_readiness
 from runtime_identity import public_runtime_identity_view, require_runtime_identity, runtime_identity_view
 from payment_operations import (
     CHALLENGED,
@@ -546,6 +547,13 @@ def _run_canonical_scan_acquired(body: RepoRequest, sku: str) -> dict[str, Any]:
         "result": result,
         "provenance": provenance,
     }
+
+
+@app.get("/v1/repoguard/operational-readiness", include_in_schema=False)
+def internal_operational_readiness():
+    if os.environ.get("REPOGUARD_INTERNAL", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise HTTPException(status_code=404, detail={"error": "NOT_FOUND"})
+    return operational_readiness()
 
 
 @app.get("/v1/repoguard/runtime-identity", include_in_schema=False)
