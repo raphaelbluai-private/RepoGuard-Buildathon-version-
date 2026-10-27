@@ -34,3 +34,13 @@ def test_gate3_private_tenant_scope_is_explicitly_not_applicable():
     assert scoped["G3-PUBLIC-SCOPE"] == PASS
     assert scoped["G3-PRIVATE-ACCESS"] == "NOT_APPLICABLE_FOR_LAUNCH_SCOPE"
     assert scoped["G3-TENANTS"] == "NOT_APPLICABLE_FOR_LAUNCH_SCOPE"
+
+
+
+def test_gate6_records_application_rate_and_circuit_controls_as_passed():
+    report = evaluate_gates(source_sha="e" * 40)
+    gate6 = next(g for g in report["gates"] if g["gate"] == 6)
+    controls = {c["control_id"]: c["status"] for c in gate6["controls"]}
+    assert controls["G6-RATE"] == PASS
+    assert controls["G6-CIRCUIT"] == PASS
+    assert gate6["status"] == BLOCKED
