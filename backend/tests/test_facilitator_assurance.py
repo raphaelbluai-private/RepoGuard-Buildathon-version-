@@ -6,6 +6,7 @@ from facilitator_assurance import (
     PINNED_X402_VERSION,
     PUBLIC_TESTNET_FACILITATOR,
     can_switch_facilitator,
+    classify_facilitator_failure,
     qualification_snapshot,
     validate_facilitator_policy,
 )
@@ -38,3 +39,23 @@ def test_settlement_timeout_requires_reconciliation():
     snapshot = qualification_snapshot("https://facilitator.example", BASE_MAINNET)
     assert "reconcile" in snapshot["settlement_timeout_semantics"]
     assert snapshot["automatic_failover_after_payment_presented"] is False
+
+
+@pytest.mark.parametrize(
+    ("phase", "failure", "state", "reconcile", "retryable"),
+    [
+        ("verify", "timeout", "PRESENTED", False, True),
+        ("verify", "5xx", "PRESENTED", False, True),
+        ("verify", "malformed response", "VERIFICATION_REJECTED", False, False),
+        ("verify", "network unavailable", "PRESENTED", False, True),
+        ("settle", "timeout", "SETTLEMENT_PENDING", True, False),
+        ("settle", "5xx", "SETTLEMENT_PENDING", True, False),
+        ("settle", "malformed response", "SETTLEMENT_PENDING", True, False),
+        ("settle", "network unavailable", "SETTLEMENT_PENDING", True, False),
+    ],
+)
+def test_facilitator_failure_matrix(phase, failure, state, reconcile, retryable):
+    result = classify_facilitator_failure(phase, failure)
+    assert result["state"] == state
+    assert result["reconciliation_required"] is reconcile
+    assert result["retryable"] is retryable
