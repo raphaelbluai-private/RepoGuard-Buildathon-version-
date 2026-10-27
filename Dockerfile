@@ -26,7 +26,8 @@ RUN apt-get update \
     && groupadd --system repoguard \
     && useradd --system --gid repoguard --home-dir /app --shell /usr/sbin/nologin repoguard
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip install --no-cache-dir "wheel>=0.46.2" "jaraco.context>=6.1.0"
 COPY backend /app/backend
 COPY --from=frontend /app/artifacts /app/artifacts
 RUN mkdir -p /data /tmp/repoguard \
