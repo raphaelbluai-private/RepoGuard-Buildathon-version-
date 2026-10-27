@@ -248,7 +248,7 @@ class PaymentOperationsBoundary(BaseHTTPMiddleware):
                     if existing.receipt_id:
                         response.headers["X-RepoGuard-Receipt-ID"] = existing.receipt_id
                     return response
-                if existing.state in {VERIFIED, FULFILLMENT_STARTED}:
+                if existing.state in {PRESENTED, VERIFIED, FULFILLMENT_STARTED}:
                     response = JSONResponse(
                         status_code=409,
                         content={
