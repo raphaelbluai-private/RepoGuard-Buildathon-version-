@@ -137,3 +137,46 @@ The repository carries the build. On any new session:
 6. inspect live `x402-production` HEAD and newer commits;
 7. verify the most recent CI/runtime evidence before inheriting any Green state;
 8. resume the exact next package without reopening completed work absent evidence of a gap.
+
+
+## G3-G4 Production Realization Update — 2026-10-27
+
+Validated engineering checkpoint:
+
+`1fe40efabe5375e7f2b48e9a83246d6b55ca3b40`
+
+GitHub Actions:
+
+`40438665107` / CI #331
+
+G3-G4 internally verifiable controls are substantially Green:
+
+- persistent paid-scan cache;
+- cache/payment/telemetry production storage under `/data`;
+- cross-process restart recovery proof for cache, payment, and telemetry state;
+- runtime source/deployment/image identity contract;
+- safe configuration hash;
+- fail-closed unknown identity and authorized-release drift rejection;
+- OCI source revision on the production image;
+- exact-SHA release manifest;
+- container provenance artifact;
+- machine-readable Python/Node production dependency inventories;
+- structured operational alert contract and core scanner/payment alert emission;
+- performance budgets;
+- operator runbook;
+- incident/credential rotation/rollback/recovery runbook;
+- evidence freshness ledger.
+
+Still not proven and therefore not Green:
+
+- exact Railway deployment identity;
+- actual Railway volume persistence across restart/redeploy;
+- deployed runtime privilege/resource limits;
+- live alert delivery/notification sink;
+- live load/performance results;
+- edge/platform abuse controls;
+- live Base Sepolia settlement and payment-reconciliation cases;
+- external autonomous-agent purchase;
+- Gate 8 authorization.
+
+Because live payment testing is currently unavailable, the next internally executable critical-path package is hostile staging/security acceptance excluding payment-network-dependent cases.
